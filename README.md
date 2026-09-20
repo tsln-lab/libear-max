@@ -95,8 +95,34 @@ ctest --preset linux
 The externals land in `externals/`, the test binaries in `tests/`. To use the
 package in Max, clone (or symlink) the repository folder into
 `~/Documents/Max 9/Packages/` (or the Max 8 equivalent) and build; Max picks
-up `externals/` and `help/` directly. The `Build` GitHub Actions workflow also
-uploads ready-made macOS and Windows packages as artifacts.
+up `externals/` and `help/` directly.
+
+## Releases
+
+Pre-built packages are published on the
+[Releases](https://github.com/tsln-lab/libear-max/releases) page. Each release
+contains `libear-max-<version>.zip`, a complete Max package with the macOS
+(universal) and Windows (x64) externals, help patchers and `package-info.json`;
+unzip it into your `Max 9/Packages` folder. Per-platform archives are attached
+too.
+
+The `Build` workflow (`.github/workflows/build.yml`) builds and tests on macOS,
+Windows and Linux for every push and pull request, and uploads the macOS and
+Windows packages as workflow artifacts. Pushing a tag that starts with `v`
+additionally assembles the combined package and publishes it as a GitHub
+release, with the version taken from the tag:
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The macOS externals are ad-hoc signed but not notarized. If Max refuses to
+load a downloaded package, clear the quarantine flag once:
+
+```sh
+xattr -dr com.apple.quarantine "~/Documents/Max 9/Packages/libear-max"
+```
 
 ## Repository layout
 

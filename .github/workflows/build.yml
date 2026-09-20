@@ -7,6 +7,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+env:
+  PACKAGE_NAME: libear-max
+
 jobs:
   macos:
     name: macOS (universal externals + unit tests)
@@ -15,6 +18,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+          fetch-depth: 0          # tags are needed for the package version (git describe)
       - name: Install Boost headers
         run: brew install boost
       - name: Configure
@@ -24,13 +28,15 @@ jobs:
       - name: Unit tests
         run: ctest --test-dir build -C Release --output-on-failure
       - name: Package
+        # tar keeps the .mxo bundle permissions and ad-hoc code signature intact
         run: |
-          mkdir -p dist/libear-max
-          cp -R externals help package-info.json License.md README.md dist/libear-max/
+          mkdir -p dist/${PACKAGE_NAME}
+          cp -R externals help package-info.json License.md README.md dist/${PACKAGE_NAME}/
+          tar -C dist -czf ${PACKAGE_NAME}-macos.tar.gz ${PACKAGE_NAME}
       - uses: actions/upload-artifact@v4
         with:
-          name: libear-max-macos
-          path: dist
+          name: ${{ env.PACKAGE_NAME }}-macos
+          path: ${{ env.PACKAGE_NAME }}-macos.tar.gz
 
   windows:
     name: Windows (x64 externals + unit tests)
@@ -39,6 +45,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+          fetch-depth: 0
       - name: Configure (Boost via vcpkg manifest)
         run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
       - name: Build
@@ -48,11 +55,12 @@ jobs:
       - name: Package
         shell: bash
         run: |
-          mkdir -p dist/libear-max
-          cp -R externals help package-info.json License.md README.md dist/libear-max/
+          mkdir -p dist/${PACKAGE_NAME}
+          cp -R externals help package-info.json License.md README.md dist/${PACKAGE_NAME}/
+          rm -f dist/${PACKAGE_NAME}/externals/*.pdb dist/${PACKAGE_NAME}/externals/*.ilk dist/${PACKAGE_NAME}/externals/*.exp dist/${PACKAGE_NAME}/externals/*.lib
       - uses: actions/upload-artifact@v4
         with:
-          name: libear-max-windows
+          name: ${{ env.PACKAGE_NAME }}-windows
           path: dist
 
   linux:
@@ -70,3 +78,49 @@ jobs:
         run: cmake --build build --parallel
       - name: Unit tests
         run: ctest --test-dir build --output-on-failure
+
+  release:
+    name: Publish GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [macos, windows, linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.PACKAGE_NAME }}-macos
+          path: macos
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.PACKAGE_NAME }}-windows
+          path: windows
+      - name: Assemble one Max package with the externals of both platforms
+        run: |
+          set -eu
+          VERSION="${GITHUB_REF_NAME#v}"
+          tar -C . -xzf macos/${PACKAGE_NAME}-macos.tar.gz
+          cp -R windows/${PACKAGE_NAME}/externals/. ${PACKAGE_NAME}/externals/
+          echo "Package contents:"
+          find ${PACKAGE_NAME} -maxdepth 2 | sort
+          # combined package (macOS .mxo + Windows .mxe64), plus per-platform archives
+          zip -r -y -q ${PACKAGE_NAME}-${VERSION}.zip ${PACKAGE_NAME}
+          cp macos/${PACKAGE_NAME}-macos.tar.gz ${PACKAGE_NAME}-${VERSION}-macos.tar.gz
+          (cd windows && zip -r -q ../${PACKAGE_NAME}-${VERSION}-windows.zip ${PACKAGE_NAME})
+          ls -l *.zip *.tar.gz
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ env.PACKAGE_NAME }} ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            ${{ env.PACKAGE_NAME }}-*.zip
+            ${{ env.PACKAGE_NAME }}-*.tar.gz
+          body: |
+            Max package with the `ear.objects`, `ear.objects~` and `ear.direct` externals built from libear.
+
+            - `${{ env.PACKAGE_NAME }}-<version>.zip`: combined package for macOS (universal `.mxo`) and Windows (x64 `.mxe64`). Unzip into your `Max 9/Packages` (or `Max 8/Packages`) folder.
+            - `-macos.tar.gz` / `-windows.zip`: the same package with only one platform's externals.
+
+            The macOS externals are ad-hoc signed, not notarized. If Max refuses to load them after download, remove the quarantine flag:
+            `xattr -dr com.apple.quarantine "~/Documents/Max 9/Packages/${{ env.PACKAGE_NAME }}"`
