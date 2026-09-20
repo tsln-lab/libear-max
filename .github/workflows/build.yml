@@ -14,6 +14,17 @@ jobs:
   macos:
     name: macOS (universal externals + unit tests)
     runs-on: macos-latest
+    outputs:
+      signed: ${{ steps.signing.outputs.signed }}
+    env:
+      # Developer ID signing + notarization (see README "Signing and notarization").
+      # All steps that use these are skipped when APPLE_SIGNING_IDENTITY is not set.
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+      APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -27,6 +38,62 @@ jobs:
         run: cmake --build build --config Release --parallel
       - name: Unit tests
         run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Import Developer ID certificate into a temporary keychain
+        id: signing
+        if: env.APPLE_SIGNING_IDENTITY != ''
+        run: |
+          set -eu
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
+          echo "$APPLE_CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/certificate.p12" -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychain -d user -s "$KEYCHAIN" login.keychain-db
+          rm -f "$RUNNER_TEMP/certificate.p12"
+          security find-identity -v -p codesigning "$KEYCHAIN"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Sign externals with Developer ID (hardened runtime + timestamp)
+        if: env.APPLE_SIGNING_IDENTITY != ''
+        run: |
+          set -eu
+          for bundle in externals/*.mxo; do
+            codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$bundle"
+            codesign --verify --strict --verbose=2 "$bundle"
+          done
+
+      - name: Notarize and staple externals
+        if: env.APPLE_SIGNING_IDENTITY != ''
+        run: |
+          set -eu
+          KEY="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          printf '%s\n' "$APPLE_API_KEY_P8" > "$KEY"
+          ditto -c -k --keepParent externals "$RUNNER_TEMP/notarize.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
+            --key "$KEY" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID" \
+            --wait --timeout 30m --output-format plist > "$RUNNER_TEMP/notarize.plist"
+          STATUS="$(/usr/libexec/PlistBuddy -c 'Print :status' "$RUNNER_TEMP/notarize.plist")"
+          echo "notarization status: $STATUS"
+          if [ "$STATUS" != "Accepted" ]; then
+            SUBMISSION_ID="$(/usr/libexec/PlistBuddy -c 'Print :id' "$RUNNER_TEMP/notarize.plist")"
+            xcrun notarytool log "$SUBMISSION_ID" --key "$KEY" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID"
+            exit 1
+          fi
+          for bundle in externals/*.mxo; do
+            xcrun stapler staple "$bundle"
+            xcrun stapler validate "$bundle"
+          done
+          rm -f "$KEY"
+
+      - name: Remove temporary keychain
+        if: always() && env.APPLE_SIGNING_IDENTITY != ''
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
+
       - name: Package
         # tar keeps the .mxo bundle permissions and ad-hoc code signature intact
         run: |
@@ -122,5 +189,4 @@ jobs:
             - `${{ env.PACKAGE_NAME }}-<version>.zip`: combined package for macOS (universal `.mxo`) and Windows (x64 `.mxe64`). Unzip into your `Max 9/Packages` (or `Max 8/Packages`) folder.
             - `-macos.tar.gz` / `-windows.zip`: the same package with only one platform's externals.
 
-            The macOS externals are ad-hoc signed, not notarized. If Max refuses to load them after download, remove the quarantine flag:
-            `xattr -dr com.apple.quarantine "~/Documents/Max 9/Packages/${{ env.PACKAGE_NAME }}"`
+            ${{ needs.macos.outputs.signed == 'true' && 'The macOS externals are signed with a Developer ID certificate, notarized by Apple and stapled.' || 'The macOS externals are ad-hoc signed, not notarized. If Max refuses to load them after download, remove the quarantine flag: `xattr -dr com.apple.quarantine "~/Documents/Max 9/Packages/libear-max"`' }}
