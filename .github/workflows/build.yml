@@ -1,0 +1,72 @@
+name: Build
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  macos:
+    name: macOS (universal externals + unit tests)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install Boost headers
+        run: brew install boost
+      - name: Configure
+        run: cmake -S . -B build -G Xcode
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Unit tests
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Package
+        run: |
+          mkdir -p dist/libear-max
+          cp -R externals help package-info.json License.md README.md dist/libear-max/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: libear-max-macos
+          path: dist
+
+  windows:
+    name: Windows (x64 externals + unit tests)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Configure (Boost via vcpkg manifest)
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Unit tests
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p dist/libear-max
+          cp -R externals help package-info.json License.md README.md dist/libear-max/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: libear-max-windows
+          path: dist
+
+  linux:
+    name: Linux (unit tests only)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y libboost-dev ninja-build
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Unit tests
+        run: ctest --test-dir build --output-on-failure

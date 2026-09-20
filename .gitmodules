@@ -1,0 +1,6 @@
+[submodule "source/libear"]
+	path = source/libear
+	url = https://github.com/ebu/libear.git
+[submodule "source/min-api"]
+	path = source/min-api
+	url = https://github.com/Cycling74/min-api.git

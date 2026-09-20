@@ -1,0 +1,42 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 19, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "macos",
+      "displayName": "macOS (Xcode, universal)",
+      "generator": "Xcode",
+      "binaryDir": "${sourceDir}/build",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
+    },
+    {
+      "name": "windows",
+      "displayName": "Windows (Visual Studio 2022, x64, Boost via vcpkg)",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+      },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    },
+    {
+      "name": "linux",
+      "displayName": "Linux (Ninja; unit tests only, Max does not run on Linux)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "macos", "configurePreset": "macos", "configuration": "Release" },
+    { "name": "windows", "configurePreset": "windows", "configuration": "Release" },
+    { "name": "linux", "configurePreset": "linux" }
+  ],
+  "testPresets": [
+    { "name": "macos", "configurePreset": "macos", "configuration": "Release", "output": { "outputOnFailure": true } },
+    { "name": "windows", "configurePreset": "windows", "configuration": "Release", "output": { "outputOnFailure": true } },
+    { "name": "linux", "configurePreset": "linux", "output": { "outputOnFailure": true } }
+  ]
+}
