@@ -8,6 +8,8 @@
 #include "c74_min.h"
 
 #include "ear/ear.hpp"
+#include "ear/decorrelate.hpp"
+#include "ear/dsp/dsp.hpp"
 
 #include <memory>
 #include <mutex>

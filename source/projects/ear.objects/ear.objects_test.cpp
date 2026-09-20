@@ -2,8 +2,14 @@
 /// @brief   Unit tests for ear.objects (run against the Min mock kernel).
 /// @license Use of this source code is governed by the MIT License found in the License.md file.
 
-#include "c74_min_unittest.h"
+#include "../shared/ear_max_test.h"
+#include "ear.objects.h"
+
+EARMAX_TEST_FORWARD_ARGUMENTS(ear_objects)
+
 #include "ear.objects.cpp"
+
+using namespace earmax_test;
 
 namespace {
 
@@ -11,21 +17,6 @@ namespace {
 constexpr int k_m030 = 0;
 constexpr int k_m000 = 2;
 constexpr int k_channels_050 = 6;
-
-std::vector<double> last_list(void* obj, int outlet_index)
-{
-    auto& output = *c74::max::object_getoutput(obj, outlet_index);
-    REQUIRE(!output.empty());
-    const auto& msg = output.back();
-    std::vector<double> values;
-    for (const auto& a : msg) {
-        if (a.a_type == c74::max::A_SYM) {
-            continue;    // the mock prefixes lists with the "list" selector
-        }
-        values.push_back(static_cast<double>(a));
-    }
-    return values;
-}
 
 } // namespace
 
@@ -58,7 +49,7 @@ SCENARIO("ear.objects calculates gains for a BS.2051 layout") {
         }
 
         WHEN("a list sets the position onto the M+030 loudspeaker") {
-            obj.list({ 30.0, 0.0, 1.0 });
+            obj.list(atoms{ 30.0, 0.0, 1.0 });
             THEN("the attributes follow and the gains are output automatically") {
                 REQUIRE(obj.azimuth == Approx(30.0));
                 REQUIRE(obj.elevation == Approx(0.0));
@@ -111,14 +102,12 @@ SCENARIO("ear.objects calculates gains for a BS.2051 layout") {
     }
 
     GIVEN("an instance created with a layout argument") {
-        auto* wrapped = wrapper_new<ear_objects>(symbol("ear.objects"), 1, atoms{ symbol("4+5+0") }.data());
-        ear_objects& obj = wrapped->m_min_object;
+        test_wrapper_args<ear_objects> an_instance(atoms{ symbol("4+5+0") });
+        ear_objects& obj = an_instance;
 
         THEN("the layout argument is honoured") {
             REQUIRE(obj.layout == symbol("4+5+0"));
             REQUIRE(obj.channel_count() == 10);
         }
-
-        c74::max::object_free(wrapped);
     }
 }

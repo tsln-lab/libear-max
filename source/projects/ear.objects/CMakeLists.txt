@@ -13,6 +13,7 @@ include_directories("${C74_INCLUDES}")
 
 set(SOURCE_FILES
     ${PROJECT_NAME}.cpp
+    ${PROJECT_NAME}.h
     ../shared/ear_max.h
 )
 

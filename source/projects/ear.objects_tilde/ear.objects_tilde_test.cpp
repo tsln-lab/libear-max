@@ -2,8 +2,14 @@
 /// @brief   Unit tests for ear.objects~ (run against the Min mock kernel).
 /// @license Use of this source code is governed by the MIT License found in the License.md file.
 
-#include "c74_min_unittest.h"
+#include "../shared/ear_max_test.h"
+#include "ear.objects_tilde.h"
+
+EARMAX_TEST_FORWARD_ARGUMENTS(ear_objects_tilde)
+
 #include "ear.objects_tilde.cpp"
+
+using namespace earmax_test;
 
 namespace {
 
@@ -55,15 +61,15 @@ SCENARIO("ear.objects~ renders a mono object to loudspeaker signals") {
     ext_main(nullptr);
 
     GIVEN("an instance created with the 0+5+0 layout") {
-        auto* wrapped = wrapper_new<ear_objects_tilde>(symbol("ear.objects~"), 1, atoms{ symbol("0+5+0") }.data());
-        ear_objects_tilde& obj = wrapped->m_min_object;
+        test_wrapper_args<ear_objects_tilde> an_instance(atoms{ symbol("0+5+0") });
+        ear_objects_tilde& obj = an_instance;
 
         REQUIRE(obj.channel_count() == k_channels_050);
         REQUIRE(obj.outlets().size() == k_channels_050);
 
         obj.vector_size(k_block);
         obj.samplerate(48000.0);
-        obj.dspsetup({ 48000.0, k_block });
+        obj.dspsetup(atoms{ 48000.0, k_block });
 
         WHEN("decorrelation is off and a DC signal is rendered at the default (front) position") {
             obj.decorrelate = false;
@@ -89,7 +95,7 @@ SCENARIO("ear.objects~ renders a mono object to loudspeaker signals") {
         WHEN("the position moves to M+030 with a zero ramp") {
             obj.decorrelate = false;
             obj.ramp = 0.0;
-            obj.list({ 30.0, 0.0 });
+            obj.list(atoms{ 30.0, 0.0 });
             audio_io io(k_channels_050, k_block);
             std::fill(io.in.begin(), io.in.end(), 1.0);
             obj(io.input(), io.output());
@@ -103,14 +109,14 @@ SCENARIO("ear.objects~ renders a mono object to loudspeaker signals") {
         WHEN("the position moves with a ramp longer than one vector") {
             obj.decorrelate = false;
             obj.ramp = 10.0;    // 480 samples at 48 kHz
-            obj.list({ 0.0, 0.0 });
+            obj.list(atoms{ 0.0, 0.0 });
             audio_io warm(k_channels_050, k_block);
             obj(warm.input(), warm.output());    // settle the ramp to the front position
             for (int i = 0; i < 10; ++i) {
                 obj(warm.input(), warm.output());
             }
 
-            obj.list({ 30.0, 0.0 });
+            obj.list(atoms{ 30.0, 0.0 });
             audio_io io(k_channels_050, k_block);
             std::fill(io.in.begin(), io.in.end(), 1.0);
             obj(io.input(), io.output());
@@ -128,7 +134,7 @@ SCENARIO("ear.objects~ renders a mono object to loudspeaker signals") {
             obj.decorrelate = true;
             obj.ramp = 0.0;
             obj.diffuse = 0.0;
-            obj.list({ 0.0, 0.0 });
+            obj.list(atoms{ 0.0, 0.0 });
 
             const int delay = obj.latency();
             REQUIRE(delay == ear::decorrelatorCompensationDelay());
@@ -154,7 +160,7 @@ SCENARIO("ear.objects~ renders a mono object to loudspeaker signals") {
             obj.decorrelate = true;
             obj.ramp = 0.0;
             obj.diffuse = 1.0;
-            obj.list({ 0.0, 0.0 });
+            obj.list(atoms{ 0.0, 0.0 });
 
             audio_io io(k_channels_050, k_block);
             double energy_front = 0.0;
@@ -173,7 +179,16 @@ SCENARIO("ear.objects~ renders a mono object to loudspeaker signals") {
                 REQUIRE(energy_front == Approx(1.0).epsilon(0.05));
             }
         }
+    }
 
-        c74::max::object_free(wrapped);
+    GIVEN("an instance created with the 4+5+0 layout") {
+        test_wrapper_args<ear_objects_tilde> an_instance(atoms{ symbol("4+5+0") });
+        ear_objects_tilde& obj = an_instance;
+
+        THEN("there is one signal outlet per loudspeaker") {
+            REQUIRE(obj.layout == symbol("4+5+0"));
+            REQUIRE(obj.channel_count() == 10);
+            REQUIRE(obj.outlets().size() == 10);
+        }
     }
 }
