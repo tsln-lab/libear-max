@@ -114,7 +114,8 @@ jobs:
           submodules: recursive
           fetch-depth: 0
       - name: Configure (Boost via vcpkg manifest)
-        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+        # no -G: CMake picks the newest installed Visual Studio (the runner image moves between versions)
+        run: cmake -S . -B build -A x64 -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
       - name: Build
         run: cmake --build build --config Release --parallel
       - name: Unit tests

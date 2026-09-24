@@ -74,7 +74,7 @@ cmake --build --preset macos
 ctest --preset macos
 ```
 
-**Windows** (Visual Studio 2022, Boost from vcpkg via the manifest in `vcpkg.json`):
+**Windows** (Visual Studio 2022 or later, Boost from vcpkg via the manifest in `vcpkg.json`):
 
 ```powershell
 $env:VCPKG_ROOT = "C:\path\to\vcpkg"
