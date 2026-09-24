@@ -11,8 +11,7 @@
     },
     {
       "name": "windows",
-      "displayName": "Windows (Visual Studio 2022, x64, Boost via vcpkg)",
-      "generator": "Visual Studio 17 2022",
+      "displayName": "Windows (newest installed Visual Studio, x64, Boost via vcpkg)",
       "architecture": "x64",
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
