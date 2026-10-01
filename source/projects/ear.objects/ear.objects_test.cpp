@@ -132,7 +132,7 @@ SCENARIO("ear.objects calculates gains for a BS.2051 layout") {
             obj.zone(atoms{ symbol("polar"), std::numeric_limits<double>::infinity(), 0.0, 0.0, 0.0 });
             THEN("it is rejected and the gains are unchanged") {
                 REQUIRE(output.size() == before);
-                REQUIRE(obj.m_otm.zoneExclusion.zones.empty());
+                REQUIRE(obj.m_meta.otm.zoneExclusion.zones.empty());
             }
         }
 
@@ -141,7 +141,7 @@ SCENARIO("ear.objects calculates gains for a BS.2051 layout") {
             obj.screenedgelock_h.set(atoms{});
             THEN("it reads as none") {
                 REQUIRE(obj.screenedgelock_h == symbol("none"));
-                REQUIRE(!obj.m_otm.screenEdgeLock.horizontal);
+                REQUIRE(!obj.m_meta.otm.screenEdgeLock.horizontal);
             }
         }
 

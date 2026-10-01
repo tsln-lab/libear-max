@@ -13,6 +13,8 @@ and unit tests.
 | `ear.objects`   | Control-rate gain calculator for ADM *Objects* metadata. Outputs one list of direct gains and one of diffuse gains, one value per loudspeaker of a BS.2051 layout. |
 | `ear.objects~`  | Signal-rate object renderer: one signal inlet, one signal outlet per loudspeaker. Gains are interpolated; the diffuse part runs through the BS.2127 decorrelation filters and the direct part is delay-compensated. |
 | `ear.direct`    | Control-rate gain calculator for ADM *DirectSpeakers* channels: maps a channel by speaker label (e.g. `M+030`) or by nominal position and bounds onto a layout. |
+| `mc.ear.objects~` | Multichannel object renderer: every channel of the multichannel input is an object with its own metadata, the multichannel output has one channel per loudspeaker. The decorrelators run once per loudspeaker on the shared diffuse bus. |
+| `mc.ear.direct~` | Multichannel bed renderer: every input channel is a DirectSpeakers channel (by label or position), rendered onto the layout. `inputlayout 0+5+0` labels the input after a BS.2051 layout. |
 
 All objects take a BS.2051 layout name as argument (`0+2+0`, `0+5+0`, `2+5+0`,
 `4+5+0`, `4+5+1`, `3+7+0`, `4+9+0`, `9+10+3`, `0+7+0`, `4+7+0`); the default is
@@ -51,6 +53,27 @@ Outlets of `ear.objects`: direct gains, diffuse gains, info (`channels`,
 `positions`, `layouts`). Outlets of `ear.objects~`: one signal per loudspeaker
 in the layout's channel order, e.g. `M+030 M-030 M+000 LFE1 M+110 M-110` for
 `0+5+0`. Feed them to `mc.pack~` / `mc.dac~` or individual `dac~` channels.
+
+### mc.ear.objects~ and mc.ear.direct~
+
+Both take the output layout as argument and have one multichannel inlet and
+one multichannel outlet. `@chans` sets the maximum number of input channels
+(default 16; extra input channels are ignored with a warning). Metadata is
+addressed per input channel in the style of Max's mc objects:
+
+- `setvalue <n> <parameter> <values...>` sets one parameter of input `n`
+  (1-based); `setvalue 0 ...` sets it for all inputs.
+- `applyvalues <parameter> v1 v2 v3 ...` spreads values over inputs 1, 2, 3.
+- Any parameter sent as a plain message (`diffuse 0.5`, `zone clear`) applies
+  to all inputs; a list sets the position of all inputs.
+
+`mc.ear.objects~` accepts every `ear.objects` parameter listed above plus
+`position` and `zone`, and the `ramp` and `decorrelate` attributes.
+`mc.ear.direct~` accepts `speakerlabel`, `position`, `azimuth`, `elevation`,
+`distance`, `bounds`, `lfe` and `packformat`, plus `inputlayout <name>`, which
+labels the input channels after a BS.2051 layout (LFE channels included), so
+rendering a 5.1 bed to 9+10+3 is `[mc.ear.direct~ 9+10+3]` with
+`inputlayout 0+5+0`.
 
 ### ear.direct
 
@@ -234,6 +257,9 @@ source/projects/shared/         ear_max.h: layout helpers and the Objects metada
 source/projects/ear.objects/    ear.objects  (class in .h, registration in .cpp, Catch tests in _test.cpp)
 source/projects/ear.direct/     ear.direct
 source/projects/ear.objects_tilde/  ear.objects~
+source/projects/mc.ear.objects_tilde/  mc.ear.objects~ (multichannel)
+source/projects/mc.ear.direct_tilde/   mc.ear.direct~ (multichannel)
+source/projects/shared/ear_max_dsp.h   bus_renderer: the shared N-in / L-out gain matrix with ramps and decorrelation
 help/                           help patchers
 ```
 
@@ -247,9 +273,13 @@ name becomes `~` in the external's name.
 - libear is compiled as a static library and linked into each external, so
   the externals have no runtime dependencies beyond Max.
 - Gain calculation happens on Max's main thread (attribute setters and
-  messages are deferred there by Min). `ear.objects~` hands new gain vectors
-  to the audio thread through a mutex that the audio thread only `try_lock`s,
-  then ramps to them linearly over `@ramp` milliseconds.
+  messages are deferred there by Min). The signal objects share one DSP core
+  (`bus_renderer`) that mixes N inputs onto L loudspeakers; new gain vectors
+  reach the audio thread through a mutex that the audio thread only
+  `try_lock`s, and are ramped linearly over `@ramp` milliseconds per input.
+- The multichannel outlets use the Max C API directly (`multichanneloutputs`
+  and `inputchanged`, registered from `maxclass_setup`), since Min only
+  supports multichannel inlets.
 - The decorrelation path uses libear's partitioned block convolver at the
   current signal vector size and its delay buffer for the direct path, exactly
   as described in `ear::GainCalculatorObjects`.
@@ -262,8 +292,7 @@ name becomes `~` in the external's name.
 - Upstream the reference parity work to `ebu/libear`.
 - Custom reproduction screens (currently the default screen is used for
   `screenref` and screen edge lock).
-- `ear.hoa`: decode matrices for HOA metadata (`ear::GainCalculatorHOA`).
-- An `mc.ear.objects~` variant with a single multichannel outlet.
+- `ear.hoa` / `mc.ear.hoa~`: HOA decoding (`ear::GainCalculatorHOA`).
 - Reading and writing ADM/BW64 files (libadm, libbw64) in a later phase.
 - Reference pages generated from the Min descriptions.
 

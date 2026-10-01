@@ -1,0 +1,336 @@
+/// @file
+/// @brief   mc.ear.direct~: render a channel bed (DirectSpeakers channels, one per
+///          input channel) to a multichannel loudspeaker signal.
+/// @license Use of this source code is governed by the MIT License found in the License.md file.
+
+#pragma once
+
+#include "../shared/ear_max.h"
+#include "../shared/ear_max_direct.h"
+#include "../shared/ear_max_dsp.h"
+#include "../shared/ear_max_mc.h"
+
+using namespace earmax;
+
+class mc_ear_direct_tilde : public object<mc_ear_direct_tilde>, public mc_operator<> {
+public:
+    MIN_DESCRIPTION{ "Render ADM DirectSpeakers channels (a channel bed) to loudspeaker signals with libear "
+                     "(ITU-R BS.2127), with multichannel signal input and output. Every input channel is a "
+                     "DirectSpeakers channel identified by speaker label or position; the output has one "
+                     "channel per loudspeaker of the BS.2051 layout given as argument. 'inputlayout <name>' "
+                     "labels the input channels after a BS.2051 layout, e.g. to render a 0+5+0 bed." };
+    MIN_TAGS{ "spatial audio, ADM, panning, audio, mc" };
+    MIN_AUTHOR{ "tsln-lab" };
+    MIN_RELATED{ "ear.direct, mc.ear.objects~" };
+
+private:
+    // ------------------------------------------------------------------
+    // state (declared before the attributes: Min runs the attribute
+    // setters while constructing the attributes, so this must exist first)
+    // ------------------------------------------------------------------
+
+    struct channel_slot {
+        direct_metadata meta;
+        std::vector<float> gains;
+    };
+
+    ear::Layout m_layout;
+    std::unique_ptr<ear::GainCalculatorDirectSpeakers> m_calc;
+    std::vector<channel_slot> m_channels;
+    std::vector<float> m_silence;
+    long m_reported_overflow{ 0 };
+    bus_renderer m_bus;
+
+public:
+    inlet<> in_main{ this, "(multichannelsignal) bed audio, one channel per DirectSpeakers channel; (setvalue/applyvalues/inputlayout) metadata" };
+    outlet<> out_main{ this, "(multichannelsignal) loudspeaker signals in layout channel order", "multichannelsignal" };
+
+    mc_ear_direct_tilde(const atoms& args = {})
+    {
+        const std::string name = layout_from_args(args);
+        if (!apply_layout(name)) {
+            apply_layout(k_default_layout);
+        }
+        resize_channels(static_cast<size_t>(static_cast<int>(chans)));
+        // the chans attribute allocated the slots before the gain calculator
+        // existed, so calculate the initial gains now
+        for (size_t i = 0; i < m_channels.size(); ++i) {
+            update(i);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // attributes
+    // ------------------------------------------------------------------
+
+    attribute<symbol> layout{ this, "layout", k_default_layout,
+        description{ "ITU-R BS.2051 output layout name, fixed at creation (give it as argument)." },
+        setter{ MIN_FUNCTION {
+            const std::string name = args[0];
+            if (m_calc && name != m_layout.name()) {
+                cerr << "layout cannot be changed after creation; create a new object with the layout as argument" << endl;
+            }
+            return { symbol(m_layout.name()) };
+        } } };
+
+    attribute<int> chans{ this, "chans", 16,
+        description{ "Maximum number of input channels. Channels beyond this are ignored. Takes effect when the audio is restarted." },
+        setter{ MIN_FUNCTION {
+            int n = static_cast<int>(args[0]);
+            n = std::max(1, std::min(n, 1024));
+            resize_channels(static_cast<size_t>(n));
+            return { n };
+        } } };
+
+    attribute<number> ramp{ this, "ramp", 10.0,
+        description{ "Gain interpolation time in milliseconds when metadata changes." },
+        setter{ MIN_FUNCTION {
+            const double ms = std::max(0.0, static_cast<double>(args[0]));
+            m_bus.set_ramp_ms(ms);
+            return { ms };
+        } } };
+
+    // ------------------------------------------------------------------
+    // messages
+    // ------------------------------------------------------------------
+
+    message<> inputlayout{ this, "inputlayout",
+        "Label the input channels after a BS.2051 layout: 'inputlayout 0+5+0' gives channels 1..6 the speaker labels "
+        "M+030 M-030 M+000 LFE1 M+110 M-110 (LFE channels are marked as LFE). Channels beyond the layout are cleared.",
+        MIN_FUNCTION {
+            if (args.empty() || !atom_is_symbol(args[0])) {
+                cerr << "inputlayout needs a layout name; known layouts: " << layout_names_joined() << endl;
+                return {};
+            }
+            ear::Layout input;
+            try {
+                input = ear::getLayout(std::string(args[0]));
+            }
+            catch (const std::exception& e) {
+                cerr << e.what() << "; known layouts: " << layout_names_joined() << endl;
+                return {};
+            }
+            const auto& channels = input.channels();
+            if (channels.size() > m_channels.size()) {
+                cerr << "inputlayout " << input.name() << " has " << channels.size() << " channels but only "
+                     << m_channels.size() << " are allocated (see the chans attribute)" << endl;
+            }
+            for (size_t i = 0; i < m_channels.size(); ++i) {
+                direct_metadata& meta = m_channels[i].meta;
+                if (i < channels.size()) {
+                    meta.dstm.speakerLabels = { channels[i].name() };
+                    meta.dstm.channelFrequency.lowPass = channels[i].isLfe() ? boost::optional<double>(120.0) : boost::none;
+                    const auto pos = channels[i].polarPositionNominal();
+                    meta.position = ear::PolarSpeakerPosition(pos.azimuth, pos.elevation, pos.distance);
+                    meta.bounds.clear();
+                    meta.rebuild_position();
+                }
+                else {
+                    meta = direct_metadata();
+                }
+                update(i);
+            }
+            return {};
+        } };
+
+    message<> setvalue{ this, "setvalue",
+        "Set a parameter of one input channel: 'setvalue <n> <parameter> <values...>' (n is 1-based; 0 sets all). "
+        "Parameters: speakerlabel position azimuth elevation distance bounds lfe packformat.",
+        MIN_FUNCTION {
+            long index = 0;
+            if (!parse_mc_index(args, m_channels.size(), index, [this](const std::string& m) { cerr << m << endl; })) {
+                return {};
+            }
+            if (args.size() < 2 || !atom_is_symbol(args[1])) {
+                cerr << "setvalue needs a parameter name after the input number" << endl;
+                return {};
+            }
+            const std::string name = args[1];
+            const atoms rest(args.begin() + 2, args.end());
+            if (index == 0) {
+                apply_all(name, rest);
+            }
+            else {
+                apply_one(static_cast<size_t>(index - 1), name, rest);
+            }
+            return {};
+        } };
+
+    message<> applyvalues{ this, "applyvalues",
+        "Spread values over the input channels: 'applyvalues speakerlabel M+030 M-030 M+000' labels channels 1, 2 and 3.",
+        MIN_FUNCTION {
+            if (args.empty() || !atom_is_symbol(args[0])) {
+                cerr << "applyvalues needs a parameter name followed by one value per channel" << endl;
+                return {};
+            }
+            const std::string name = args[0];
+            const size_t n = std::min(args.size() - 1, m_channels.size());
+            for (size_t i = 0; i < n; ++i) {
+                apply_one(i, name, atoms{ args[i + 1] });
+            }
+            return {};
+        } };
+
+    message<> anything{ this, "anything",
+        "Any channel parameter sent as a message (e.g. 'packformat AP_00010003', 'lfe 0') is applied to all input channels.",
+        MIN_FUNCTION {
+            if (args.empty() || !atom_is_symbol(args[0])) {
+                return {};
+            }
+            const std::string name = args[0];
+            apply_all(name, atoms(args.begin() + 1, args.end()));
+            return {};
+        } };
+
+    message<> channels{ this, "channels", "Post the channel names of the output layout to the Max console.",
+        MIN_FUNCTION {
+            std::string names;
+            for (const auto& name : m_layout.channelNames()) {
+                names += name + " ";
+            }
+            cout << m_layout.name() << ": " << names << endl;
+            return {};
+        } };
+
+    message<> dspsetup{ this, "dspsetup",
+        MIN_FUNCTION {
+            m_bus.configure(m_layout, m_channels.size(), static_cast<size_t>(vector_size()), samplerate(), false);
+            for (size_t i = 0; i < m_channels.size(); ++i) {
+                m_bus.set_gains_now(i, m_channels[i].gains, m_silence);
+            }
+            return {};
+        } };
+
+    message<> maxclass_setup{ this, "maxclass_setup",
+        MIN_FUNCTION {
+            c74::max::t_class* c = args[0];
+            mc_register_methods<mc_ear_direct_tilde>(c);
+            return {};
+        } };
+
+    // ------------------------------------------------------------------
+    // multichannel plumbing (see ear_max_mc.h)
+    // ------------------------------------------------------------------
+
+    long mc_output_channels(long) const
+    {
+        return static_cast<long>(channel_count());
+    }
+
+    long mc_input_changed(long, long channels)
+    {
+        if (channels > static_cast<long>(m_channels.size()) && channels != m_reported_overflow) {
+            m_reported_overflow = channels;
+            cerr << "input has " << channels << " channels but only " << m_channels.size()
+                 << " are allocated (see the chans attribute); extra channels are ignored" << endl;
+        }
+        return 0;
+    }
+
+    // ------------------------------------------------------------------
+    // audio
+    // ------------------------------------------------------------------
+
+    void operator()(audio_bundle input, audio_bundle output)
+    {
+        m_bus.process(input.samples(), static_cast<size_t>(input.channel_count()), output.samples(),
+                      static_cast<size_t>(output.channel_count()), static_cast<size_t>(input.frame_count()));
+    }
+
+    // ------------------------------------------------------------------
+    // state
+    // ------------------------------------------------------------------
+
+    size_t channel_count() const
+    {
+        return m_layout.channels().size();
+    }
+
+    size_t input_count() const
+    {
+        return m_channels.size();
+    }
+
+    const direct_metadata& metadata(size_t i) const
+    {
+        return m_channels[i].meta;
+    }
+
+    const std::vector<float>& gains(size_t i) const
+    {
+        return m_channels[i].gains;
+    }
+
+    int latency() const
+    {
+        return m_bus.latency();
+    }
+
+private:
+    bool apply_layout(const std::string& name)
+    {
+        try {
+            ear::Layout new_layout = ear::getLayout(name);
+            m_layout = std::move(new_layout);
+            m_calc = std::make_unique<ear::GainCalculatorDirectSpeakers>(m_layout);
+            m_silence.assign(channel_count(), 0.0f);
+            return true;
+        }
+        catch (const std::exception& e) {
+            cerr << e.what() << "; known layouts: " << layout_names_joined() << endl;
+            return false;
+        }
+    }
+
+    void resize_channels(size_t n)
+    {
+        const size_t old = m_channels.size();
+        m_channels.resize(n);
+        for (size_t i = old; i < n; ++i) {
+            m_channels[i].gains.assign(channel_count(), 0.0f);
+            update(i);
+        }
+    }
+
+    void update(size_t i)
+    {
+        channel_slot& slot = m_channels[i];
+        if (!m_calc) {
+            return;
+        }
+        slot.gains.resize(channel_count(), 0.0f);
+        if (!compute_direct_gains(*m_calc, slot.meta.dstm, slot.gains, [this, i](const std::string& m) {
+                cerr << "channel " << (i + 1) << ": " << m << endl;
+            })) {
+            return;
+        }
+        if (initialized()) {
+            m_bus.set_targets(i, slot.gains, m_silence);
+        }
+    }
+
+    void apply_one(size_t i, const std::string& name, const atoms& values)
+    {
+        if (m_channels[i].meta.apply(name, values, [this, i](const std::string& m) {
+                cerr << "channel " << (i + 1) << ": " << m << endl;
+            })) {
+            update(i);
+        }
+    }
+
+    void apply_all(const std::string& name, const atoms& values)
+    {
+        for (size_t i = 0; i < m_channels.size(); ++i) {
+            bool ok = m_channels[i].meta.apply(name, values, [this, i](const std::string& m) {
+                if (i == 0) {
+                    cerr << m << endl;
+                }
+            });
+            if (!ok) {
+                return;
+            }
+            update(i);
+        }
+    }
+
+};
