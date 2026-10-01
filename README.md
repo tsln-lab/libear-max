@@ -55,6 +55,32 @@ mapping rules) and `autocalc`. Messages: `speakerlabel M+030 ...` (labels take
 precedence; send with no arguments to clear), `bounds azMin azMax elMin elMax
 [distMin distMax]`, a list `azimuth elevation [distance]`, and `bang`.
 
+## Reference parity
+
+The goal is to match the reference renderer, the EBU ADM Renderer
+([`ear`](https://github.com/ebu/ebu_adm_renderer)), as closely as possible.
+Upstream libear implements the polar Objects path, DirectSpeakers and HOA but
+not every Objects parameter, so this package builds against a fork,
+[tsln-lab/libear](https://github.com/tsln-lab/libear) (branch
+`reference-parity`), where the missing features are being ported from the
+Python reference. Every port is validated by `objects_reference_tests` in the
+fork, which compares libear against gains generated from the reference
+implementation over 1,620 block formats (point sources, extent, channel lock,
+divergence, Cartesian, zone exclusion and screen cases on six layouts).
+
+| Objects feature | Status |
+| --- | --- |
+| polar position, extent (width/height/depth), gain, diffuse | upstream libear, matches reference |
+| `channellock`, `channellock_distance` | ported, matches reference |
+| `divergence`, `divergence_range` (polar) | ported, matches reference |
+| `cartesian`, `x`, `y`, `z` (allocentric panning) | not yet: libear reports an error, gains unchanged |
+| zone exclusion | not yet (no Max interface yet) |
+| `screenref`, screen edge lock | not yet: libear reports an error, gains unchanged |
+| `M+SC`/`M-SC` wider than 25° | not yet |
+
+Within the agreement of the harness, gains match the reference to 1e-15,
+or about 1e-7 where libear's single-precision extent panner is involved.
+
 ## Building
 
 Requirements: CMake 3.19+, a C++17 compiler, git, and the Boost headers
@@ -191,7 +217,7 @@ xcrun stapler validate ear.objects.mxo
 CMakeLists.txt                  package build (Min-DevKit style) + libear
 package-info.json.in            Max package manifest template
 source/min-api/                 Min C++ API for Max (submodule; brings max-sdk-base and the mock kernel)
-source/libear/                  libear (submodule; bundles Eigen, xsimd, KISS FFT)
+source/libear/                  libear fork with reference-parity ports (submodule; bundles Eigen, xsimd, KISS FFT)
 source/projects/shared/         ear_max.h: layout helpers and the Objects metadata attribute base
 source/projects/ear.objects/    ear.objects  (class in .h, registration in .cpp, Catch tests in _test.cpp)
 source/projects/ear.direct/     ear.direct
@@ -221,9 +247,13 @@ name becomes `~` in the external's name.
 
 ## Roadmap
 
+- Finish the reference parity work in the libear fork: zone exclusion,
+  Cartesian (allocentric) panning and extent, screen scaling and edge lock,
+  wide `M±SC` loudspeakers, Cartesian DirectSpeakers positions.
+- `zone` messages and screen attributes on `ear.objects` / `ear.objects~`.
 - `ear.hoa`: decode matrices for HOA metadata (`ear::GainCalculatorHOA`).
-- Zone exclusion and custom reference screens for Objects metadata.
 - An `mc.ear.objects~` variant with a single multichannel outlet.
+- Reading and writing ADM/BW64 files (libadm, libbw64) in a later phase.
 - Reference pages generated from the Min descriptions.
 
 ## License

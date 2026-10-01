@@ -72,6 +72,38 @@ SCENARIO("ear.objects calculates gains for a BS.2051 layout") {
             }
         }
 
+        WHEN("channel lock is enabled near a loudspeaker") {
+            obj.channellock = true;
+            obj.list(atoms{ 14.0, 0.0 });
+            THEN("the object snaps to M+000") {
+                auto direct = last_list(obj, 0);
+                REQUIRE(direct[k_m000] == Approx(1.0));
+                REQUIRE(direct[k_m030] == Approx(0.0).margin(1e-9));
+            }
+        }
+
+        WHEN("divergence is set to 1 with a 30 degree range at the front") {
+            obj.divergence_range = 30.0;
+            obj.divergence = 1.0;
+            obj.bang();
+            THEN("the signal is split between M+030 and M-030") {
+                auto direct = last_list(obj, 0);
+                REQUIRE(direct[k_m030] == Approx(std::sqrt(0.5)));
+                REQUIRE(direct[1] == Approx(std::sqrt(0.5)));
+                REQUIRE(direct[k_m000] == Approx(0.0).margin(1e-9));
+            }
+        }
+
+        WHEN("an unsupported feature (cartesian) is enabled") {
+            obj.list(atoms{ 30.0, 0.0 });
+            auto& output = *c74::max::object_getoutput(obj, 0);
+            const auto before = output.size();
+            obj.cartesian = true;
+            THEN("no new gains are output") {
+                REQUIRE(output.size() == before);
+            }
+        }
+
         WHEN("the layout attribute is changed to 4+5+0") {
             obj.layout = "4+5+0";
             obj.bang();

@@ -289,7 +289,8 @@ public:
 
     attribute<bool> cartesian{ this, "cartesian", false,
         description{ "Use cartesian coordinates (x y z) instead of polar (azimuth elevation distance). "
-                     "This also selects which divergence parameters are used." },
+                     "This also selects which divergence parameters are used. "
+                     "NOT YET SUPPORTED by libear: enabling it reports an error and keeps the previous gains." },
         setter{ MIN_FUNCTION {
             m_cartesian = static_cast<bool>(args[0]);
             rebuild_position();
@@ -430,7 +431,8 @@ public:
         } } };
 
     attribute<bool> screenref{ this, "screenref", false,
-        description{ "Apply screen scaling relative to the default reference screen." },
+        description{ "Apply screen scaling relative to the default reference screen. "
+                     "NOT YET SUPPORTED by libear: enabling it reports an error and keeps the previous gains." },
         setter{ MIN_FUNCTION {
             m_otm.screenRef = static_cast<bool>(args[0]);
             changed();
