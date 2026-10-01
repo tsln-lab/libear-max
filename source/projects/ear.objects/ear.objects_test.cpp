@@ -2,6 +2,8 @@
 /// @brief   Unit tests for ear.objects (run against the Min mock kernel).
 /// @license Use of this source code is governed by the MIT License found in the License.md file.
 
+#include <limits>
+
 #include "../shared/ear_max_test.h"
 #include "ear.objects.h"
 
@@ -120,6 +122,26 @@ SCENARIO("ear.objects calculates gains for a BS.2051 layout") {
                 THEN("the centre loudspeaker is used again") {
                     REQUIRE(last_list(obj, 0)[k_m000] == Approx(1.0));
                 }
+            }
+        }
+
+        WHEN("a zone with a non-finite bound is sent") {
+            obj.list(atoms{ 0.0, 0.0 });
+            auto& output = *c74::max::object_getoutput(obj, 0);
+            const auto before = output.size();
+            obj.zone(atoms{ symbol("polar"), std::numeric_limits<double>::infinity(), 0.0, 0.0, 0.0 });
+            THEN("it is rejected and the gains are unchanged") {
+                REQUIRE(output.size() == before);
+                REQUIRE(obj.m_otm.zoneExclusion.zones.empty());
+            }
+        }
+
+        WHEN("a screen edge lock attribute is set without arguments") {
+            obj.screenedgelock_h = "right";
+            obj.screenedgelock_h.set(atoms{});
+            THEN("it reads as none") {
+                REQUIRE(obj.screenedgelock_h == symbol("none"));
+                REQUIRE(!obj.m_otm.screenEdgeLock.horizontal);
             }
         }
 

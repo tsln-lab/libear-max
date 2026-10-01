@@ -11,6 +11,8 @@
 #include "ear/decorrelate.hpp"
 #include "ear/dsp/dsp.hpp"
 
+#include <cmath>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -285,7 +287,15 @@ public:
                     this->cerr << "zone values must be numbers" << endl;
                     return {};
                 }
-                values.push_back(static_cast<float>(static_cast<double>(args[i])));
+                // libear stores zone bounds as float: reject values that would
+                // not survive the narrowing (NaN, infinities, out of range)
+                const double v = static_cast<double>(args[i]);
+                const double max_float = static_cast<double>(std::numeric_limits<float>::max());
+                if (!std::isfinite(v) || v < -max_float || v > max_float) {
+                    this->cerr << "zone values must be finite numbers" << endl;
+                    return {};
+                }
+                values.push_back(static_cast<float>(v));
             }
 
             if (kind == "clear") {
@@ -476,7 +486,8 @@ public:
     attribute<symbol> screenedgelock_h{ this, "screenedgelock_h", "none",
         description{ "Lock the horizontal position to a screen edge: none, left or right." },
         setter{ MIN_FUNCTION {
-            const std::string value = args[0];
+            // no argument means "none"
+            const std::string value = args.empty() ? std::string("none") : std::string(args[0]);
             if (value == "left" || value == "right") {
                 m_otm.screenEdgeLock.horizontal = value;
             }
@@ -494,7 +505,8 @@ public:
     attribute<symbol> screenedgelock_v{ this, "screenedgelock_v", "none",
         description{ "Lock the vertical position to a screen edge: none, top or bottom." },
         setter{ MIN_FUNCTION {
-            const std::string value = args[0];
+            // no argument means "none"
+            const std::string value = args.empty() ? std::string("none") : std::string(args[0]);
             if (value == "top" || value == "bottom") {
                 m_otm.screenEdgeLock.vertical = value;
             }
