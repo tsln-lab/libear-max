@@ -266,6 +266,50 @@ public:
     }
 
     // ------------------------------------------------------------------
+    // zone exclusion messages
+    // ------------------------------------------------------------------
+
+    message<> zone{ this, "zone",
+        "Add an exclusion zone: 'zone polar minAzimuth maxAzimuth minElevation maxElevation' "
+        "or 'zone cartesian minX maxX minY maxY minZ maxZ'. Loudspeakers inside the zones are not used; "
+        "'zone clear' removes all zones.",
+        MIN_FUNCTION {
+            if (args.empty() || !is_symbol(args[0])) {
+                this->cerr << "zone needs 'polar', 'cartesian' or 'clear' as first argument" << endl;
+                return {};
+            }
+            const std::string kind = args[0];
+            std::vector<float> values;
+            for (size_t i = 1; i < args.size(); ++i) {
+                if (!is_numeric(args[i])) {
+                    this->cerr << "zone values must be numbers" << endl;
+                    return {};
+                }
+                values.push_back(static_cast<float>(static_cast<double>(args[i])));
+            }
+
+            if (kind == "clear") {
+                m_otm.zoneExclusion.zones.clear();
+            }
+            else if (kind == "polar" && values.size() == 4) {
+                m_otm.zoneExclusion.zones.push_back(
+                    ear::PolarExclusionZone{ values[0], values[1], values[2], values[3], 0.0f, 0.0f, "" });
+            }
+            else if (kind == "cartesian" && values.size() == 6) {
+                m_otm.zoneExclusion.zones.push_back(ear::CartesianExclusionZone{
+                    values[0], values[1], values[2], values[3], values[4], values[5], "" });
+            }
+            else {
+                this->cerr << "zone: use 'zone polar minAz maxAz minEl maxEl', "
+                              "'zone cartesian minX maxX minY maxY minZ maxZ' or 'zone clear'"
+                           << endl;
+                return {};
+            }
+            changed();
+            return {};
+        } };
+
+    // ------------------------------------------------------------------
     // attributes
     // ------------------------------------------------------------------
 
@@ -289,8 +333,7 @@ public:
 
     attribute<bool> cartesian{ this, "cartesian", false,
         description{ "Use cartesian coordinates (x y z) instead of polar (azimuth elevation distance). "
-                     "This also selects which divergence parameters are used. "
-                     "NOT YET SUPPORTED by libear: enabling it reports an error and keeps the previous gains." },
+                     "This also selects which divergence parameters are used." },
         setter{ MIN_FUNCTION {
             m_cartesian = static_cast<bool>(args[0]);
             rebuild_position();
@@ -430,9 +473,44 @@ public:
             return args;
         } } };
 
+    attribute<symbol> screenedgelock_h{ this, "screenedgelock_h", "none",
+        description{ "Lock the horizontal position to a screen edge: none, left or right." },
+        setter{ MIN_FUNCTION {
+            const std::string value = args[0];
+            if (value == "left" || value == "right") {
+                m_otm.screenEdgeLock.horizontal = value;
+            }
+            else if (value == "none" || value.empty()) {
+                m_otm.screenEdgeLock.horizontal = boost::none;
+            }
+            else {
+                this->cerr << "screenedgelock_h must be none, left or right" << endl;
+                return { symbol(m_otm.screenEdgeLock.horizontal ? *m_otm.screenEdgeLock.horizontal : "none") };
+            }
+            changed();
+            return { symbol(value.empty() ? "none" : value) };
+        } } };
+
+    attribute<symbol> screenedgelock_v{ this, "screenedgelock_v", "none",
+        description{ "Lock the vertical position to a screen edge: none, top or bottom." },
+        setter{ MIN_FUNCTION {
+            const std::string value = args[0];
+            if (value == "top" || value == "bottom") {
+                m_otm.screenEdgeLock.vertical = value;
+            }
+            else if (value == "none" || value.empty()) {
+                m_otm.screenEdgeLock.vertical = boost::none;
+            }
+            else {
+                this->cerr << "screenedgelock_v must be none, top or bottom" << endl;
+                return { symbol(m_otm.screenEdgeLock.vertical ? *m_otm.screenEdgeLock.vertical : "none") };
+            }
+            changed();
+            return { symbol(value.empty() ? "none" : value) };
+        } } };
+
     attribute<bool> screenref{ this, "screenref", false,
-        description{ "Apply screen scaling relative to the default reference screen. "
-                     "NOT YET SUPPORTED by libear: enabling it reports an error and keeps the previous gains." },
+        description{ "Apply screen scaling relative to the reference screen (the default ADM screen)." },
         setter{ MIN_FUNCTION {
             m_otm.screenRef = static_cast<bool>(args[0]);
             changed();

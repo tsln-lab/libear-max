@@ -94,13 +94,43 @@ SCENARIO("ear.objects calculates gains for a BS.2051 layout") {
             }
         }
 
-        WHEN("an unsupported feature (cartesian) is enabled") {
-            obj.list(atoms{ 30.0, 0.0 });
-            auto& output = *c74::max::object_getoutput(obj, 0);
-            const auto before = output.size();
+        WHEN("cartesian coordinates are used") {
             obj.cartesian = true;
-            THEN("no new gains are output") {
-                REQUIRE(output.size() == before);
+            obj.list(atoms{ 1.0, 1.0, 0.0 });
+            THEN("the object is rendered with the allocentric panner onto M-030") {
+                REQUIRE(obj.x == Approx(1.0));
+                REQUIRE(obj.y == Approx(1.0));
+                auto direct = last_list(obj, 0);
+                REQUIRE(direct[1] == Approx(1.0));
+                REQUIRE(direct[k_m000] == Approx(0.0).margin(1e-9));
+            }
+        }
+
+        WHEN("the centre loudspeaker is excluded with a polar zone") {
+            obj.zone(atoms{ symbol("polar"), 0.0, 0.0, 0.0, 0.0 });
+            obj.list(atoms{ 0.0, 0.0 });
+            THEN("the signal is split between M+030 and M-030") {
+                auto direct = last_list(obj, 0);
+                REQUIRE(direct[k_m030] == Approx(std::sqrt(0.5)));
+                REQUIRE(direct[1] == Approx(std::sqrt(0.5)));
+                REQUIRE(direct[k_m000] == Approx(0.0).margin(1e-9));
+            }
+            AND_WHEN("the zones are cleared") {
+                obj.zone(atoms{ symbol("clear") });
+                THEN("the centre loudspeaker is used again") {
+                    REQUIRE(last_list(obj, 0)[k_m000] == Approx(1.0));
+                }
+            }
+        }
+
+        WHEN("the position is locked to the right screen edge") {
+            obj.screenedgelock_h = "right";
+            obj.list(atoms{ 0.0, 0.0 });
+            THEN("the object moves towards M-030") {
+                auto direct = last_list(obj, 0);
+                REQUIRE(direct[1] > 0.5);
+                REQUIRE(direct[k_m000] > 0.0);
+                REQUIRE(direct[k_m000] < 0.5);
             }
         }
 
