@@ -2,6 +2,8 @@
 /// @brief   Unit tests for ear.objects (run against the Min mock kernel).
 /// @license Use of this source code is governed by the MIT License found in the License.md file.
 
+#include <limits>
+
 #include "../shared/ear_max_test.h"
 #include "ear.objects.h"
 
@@ -69,6 +71,88 @@ SCENARIO("ear.objects calculates gains for a BS.2051 layout") {
                     REQUIRE(g == Approx(0.0).margin(1e-6));
                 }
                 REQUIRE(diffuse[k_m000] == Approx(1.0));
+            }
+        }
+
+        WHEN("channel lock is enabled near a loudspeaker") {
+            obj.channellock = true;
+            obj.list(atoms{ 14.0, 0.0 });
+            THEN("the object snaps to M+000") {
+                auto direct = last_list(obj, 0);
+                REQUIRE(direct[k_m000] == Approx(1.0));
+                REQUIRE(direct[k_m030] == Approx(0.0).margin(1e-9));
+            }
+        }
+
+        WHEN("divergence is set to 1 with a 30 degree range at the front") {
+            obj.divergence_range = 30.0;
+            obj.divergence = 1.0;
+            obj.bang();
+            THEN("the signal is split between M+030 and M-030") {
+                auto direct = last_list(obj, 0);
+                REQUIRE(direct[k_m030] == Approx(std::sqrt(0.5)));
+                REQUIRE(direct[1] == Approx(std::sqrt(0.5)));
+                REQUIRE(direct[k_m000] == Approx(0.0).margin(1e-9));
+            }
+        }
+
+        WHEN("cartesian coordinates are used") {
+            obj.cartesian = true;
+            obj.list(atoms{ 1.0, 1.0, 0.0 });
+            THEN("the object is rendered with the allocentric panner onto M-030") {
+                REQUIRE(obj.x == Approx(1.0));
+                REQUIRE(obj.y == Approx(1.0));
+                auto direct = last_list(obj, 0);
+                REQUIRE(direct[1] == Approx(1.0));
+                REQUIRE(direct[k_m000] == Approx(0.0).margin(1e-9));
+            }
+        }
+
+        WHEN("the centre loudspeaker is excluded with a polar zone") {
+            obj.zone(atoms{ symbol("polar"), 0.0, 0.0, 0.0, 0.0 });
+            obj.list(atoms{ 0.0, 0.0 });
+            THEN("the signal is split between M+030 and M-030") {
+                auto direct = last_list(obj, 0);
+                REQUIRE(direct[k_m030] == Approx(std::sqrt(0.5)));
+                REQUIRE(direct[1] == Approx(std::sqrt(0.5)));
+                REQUIRE(direct[k_m000] == Approx(0.0).margin(1e-9));
+            }
+            AND_WHEN("the zones are cleared") {
+                obj.zone(atoms{ symbol("clear") });
+                THEN("the centre loudspeaker is used again") {
+                    REQUIRE(last_list(obj, 0)[k_m000] == Approx(1.0));
+                }
+            }
+        }
+
+        WHEN("a zone with a non-finite bound is sent") {
+            obj.list(atoms{ 0.0, 0.0 });
+            auto& output = *c74::max::object_getoutput(obj, 0);
+            const auto before = output.size();
+            obj.zone(atoms{ symbol("polar"), std::numeric_limits<double>::infinity(), 0.0, 0.0, 0.0 });
+            THEN("it is rejected and the gains are unchanged") {
+                REQUIRE(output.size() == before);
+                REQUIRE(obj.m_otm.zoneExclusion.zones.empty());
+            }
+        }
+
+        WHEN("a screen edge lock attribute is set without arguments") {
+            obj.screenedgelock_h = "right";
+            obj.screenedgelock_h.set(atoms{});
+            THEN("it reads as none") {
+                REQUIRE(obj.screenedgelock_h == symbol("none"));
+                REQUIRE(!obj.m_otm.screenEdgeLock.horizontal);
+            }
+        }
+
+        WHEN("the position is locked to the right screen edge") {
+            obj.screenedgelock_h = "right";
+            obj.list(atoms{ 0.0, 0.0 });
+            THEN("the object moves towards M-030") {
+                auto direct = last_list(obj, 0);
+                REQUIRE(direct[1] > 0.5);
+                REQUIRE(direct[k_m000] > 0.0);
+                REQUIRE(direct[k_m000] < 0.5);
             }
         }
 

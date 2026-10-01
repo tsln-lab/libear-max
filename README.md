@@ -37,10 +37,15 @@ position in one go (`x y z` when `@cartesian 1`).
 | `diffuse` | `0` | diffuseness, 0..1 |
 | `channellock` `channellock_distance` | `0 0` | snap to the nearest loudspeaker (0 distance = unlimited) |
 | `divergence` `divergence_range` | `0 45` | object divergence and its range |
-| `screenref` | `0` | screen scaling with the default reference screen |
+| `screenref` | `0` | screen scaling relative to the reference screen |
+| `screenedgelock_h`, `screenedgelock_v` | `none` | lock to a screen edge: `left`/`right`, `top`/`bottom` |
 | `autocalc` (`ear.objects` only) | `1` | output gains on every change; otherwise send `bang` |
 | `ramp` (`ear.objects~` only) | `10` | gain interpolation time in ms |
 | `decorrelate` (`ear.objects~` only) | `1` | use the decorrelation filters (adds 255 samples of latency) |
+
+Zone exclusion is set with messages: `zone polar minAz maxAz minEl maxEl`,
+`zone cartesian minX maxX minY maxY minZ maxZ` (repeat to add zones) and
+`zone clear`.
 
 Outlets of `ear.objects`: direct gains, diffuse gains, info (`channels`,
 `positions`, `layouts`). Outlets of `ear.objects~`: one signal per loudspeaker
@@ -54,6 +59,39 @@ channel as LFE), `packformat` (optional `audioPackFormatID` for pack-specific
 mapping rules) and `autocalc`. Messages: `speakerlabel M+030 ...` (labels take
 precedence; send with no arguments to clear), `bounds azMin azMax elMin elMax
 [distMin distMax]`, a list `azimuth elevation [distance]`, and `bang`.
+
+## Reference parity
+
+The goal is to match the reference renderer, the EBU ADM Renderer
+([`ear`](https://github.com/ebu/ebu_adm_renderer)), as closely as possible.
+Upstream libear implements the polar Objects path, DirectSpeakers and HOA but
+not every Objects parameter, so this package builds against a fork,
+[tsln-lab/libear](https://github.com/tsln-lab/libear) (branch
+`reference-parity`), where the missing features have been ported from the
+Python reference. Every port is validated in the fork against gains generated
+from the reference implementation: 1,906 Objects block formats (point sources,
+extent, channel lock, divergence, Cartesian, zone exclusion, screen scaling,
+screen edge lock, wide screen loudspeakers) and 2,557 DirectSpeakers block
+formats (labels, URNs, LFE, bounds, Cartesian, screen edge lock, common
+definition packs) across the BS.2051 layouts.
+
+| Feature | Status |
+| --- | --- |
+| polar position, extent (width/height/depth), gain, diffuse | matches reference (upstream libear) |
+| `channellock`, `channellock_distance` | matches reference (ported) |
+| `divergence`, `divergence_range`, polar and Cartesian | matches reference (ported) |
+| `cartesian`, `x`, `y`, `z`: allocentric panning and Cartesian extent | matches reference (ported) |
+| `zone polar ...` / `zone cartesian ...` / `zone clear` messages | matches reference (ported) |
+| `screenref`, `screenedgelock_h`, `screenedgelock_v` | matches reference (ported) |
+| `M+SC`/`M-SC` loudspeakers wider than 25° | matches reference (ported) |
+| DirectSpeakers: Cartesian positions and bounds, screen edge lock | matches reference (ported) |
+| HOA `screenRef` and `nfcRefDist` | not implemented in libear (warnings, as upstream) |
+
+Gains match to 1e-15, or about 1e-7 where libear's single-precision extent
+panner is involved. The parity data and the generator scripts live in the
+fork under `tools/reference/` and `tests/reference/`. Cartesian rendering is
+only defined for the BS.2051 layouts, which have allocentric loudspeaker
+positions; custom layouts render in polar mode only.
 
 ## Building
 
@@ -191,7 +229,7 @@ xcrun stapler validate ear.objects.mxo
 CMakeLists.txt                  package build (Min-DevKit style) + libear
 package-info.json.in            Max package manifest template
 source/min-api/                 Min C++ API for Max (submodule; brings max-sdk-base and the mock kernel)
-source/libear/                  libear (submodule; bundles Eigen, xsimd, KISS FFT)
+source/libear/                  libear fork with reference-parity ports (submodule; bundles Eigen, xsimd, KISS FFT)
 source/projects/shared/         ear_max.h: layout helpers and the Objects metadata attribute base
 source/projects/ear.objects/    ear.objects  (class in .h, registration in .cpp, Catch tests in _test.cpp)
 source/projects/ear.direct/     ear.direct
@@ -221,9 +259,12 @@ name becomes `~` in the external's name.
 
 ## Roadmap
 
+- Upstream the reference parity work to `ebu/libear`.
+- Custom reproduction screens (currently the default screen is used for
+  `screenref` and screen edge lock).
 - `ear.hoa`: decode matrices for HOA metadata (`ear::GainCalculatorHOA`).
-- Zone exclusion and custom reference screens for Objects metadata.
 - An `mc.ear.objects~` variant with a single multichannel outlet.
+- Reading and writing ADM/BW64 files (libadm, libbw64) in a later phase.
 - Reference pages generated from the Min descriptions.
 
 ## License
