@@ -147,7 +147,9 @@ public:
     }
 
     /// Audio thread. Inputs beyond the capacity are ignored; outputs beyond
-    /// the layout are silenced.
+    /// the layout are silenced. A vector size other than the configured block
+    /// size produces silence (the DSP chain is expected to call configure()
+    /// through dspsetup before the size changes).
     void process(const double* const* ins, size_t num_ins, double* const* outs, size_t num_outs, size_t frames)
     {
         const size_t n_out = std::min(num_outs, m_outputs);
@@ -158,9 +160,13 @@ public:
             return;
         }
         if (frames != m_block_size) {
-            // normally prevented by dspsetup; only reached if the vector size
-            // changed unexpectedly
-            configure(m_layout, m_capacity, frames, m_samplerate, m_with_decorrelation);
+            // normally prevented by dspsetup; never reallocate or reset the
+            // gain state on the audio thread: output silence until the next
+            // dspsetup configures the buffers for the new vector size
+            for (size_t ch = 0; ch < num_outs; ++ch) {
+                std::fill(outs[ch], outs[ch] + frames, 0.0);
+            }
+            return;
         }
 
         pull_pending();

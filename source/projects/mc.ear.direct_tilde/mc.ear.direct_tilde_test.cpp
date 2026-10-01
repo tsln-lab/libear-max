@@ -3,6 +3,7 @@
 /// @license Use of this source code is governed by the MIT License found in the License.md file.
 
 #include <cmath>
+#include <limits>
 
 #include "../shared/ear_max_test.h"
 #include "mc.ear.direct_tilde.h"
@@ -105,6 +106,15 @@ SCENARIO("mc.ear.direct~ renders a channel bed to a multichannel loudspeaker sig
                 REQUIRE(obj.gains(0)[2] == Approx(1.0));
                 REQUIRE(obj.gains(1)[1] == Approx(1.0));
                 REQUIRE(obj.gains(2)[0] == Approx(1.0));
+            }
+        }
+
+        WHEN("non-finite bounds or positions are sent") {
+            obj.setvalue(atoms{ 1, symbol("bounds"), 0.0, std::numeric_limits<double>::infinity(), 0.0, 0.0 });
+            obj.setvalue(atoms{ 1, symbol("azimuth"), std::numeric_limits<double>::quiet_NaN() });
+            THEN("they are rejected") {
+                REQUIRE(obj.metadata(0).bounds.empty());
+                REQUIRE(obj.metadata(0).position.azimuth == Approx(0.0));
             }
         }
 

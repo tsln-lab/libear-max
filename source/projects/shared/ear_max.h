@@ -185,7 +185,12 @@ struct object_metadata {
                 error(name + " needs a number");
                 return false;
             }
-            out = static_cast<double>(args[0]);
+            const double v = static_cast<double>(args[0]);
+            if (!std::isfinite(v)) {
+                error(name + " needs a finite number");
+                return false;
+            }
+            out = v;
             return true;
         };
         auto need_bool = [&](bool& out) {
@@ -283,8 +288,8 @@ struct object_metadata {
                 return false;
             }
             for (const auto& a : args) {
-                if (!atom_is_numeric(a)) {
-                    error("position values must be numbers");
+                if (!atom_is_numeric(a) || !std::isfinite(static_cast<double>(a))) {
+                    error("position values must be finite numbers");
                     return false;
                 }
             }

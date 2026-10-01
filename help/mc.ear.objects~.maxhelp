@@ -88,7 +88,7 @@
       80.0,
       22.0
      ],
-     "text": "mc.noise~ 3",
+     "text": "mc.noise~ @chans 3",
      "numinlets": 0,
      "numoutlets": 1,
      "outlettype": [

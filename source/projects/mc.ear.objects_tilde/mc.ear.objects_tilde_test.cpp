@@ -3,6 +3,7 @@
 /// @license Use of this source code is governed by the MIT License found in the License.md file.
 
 #include <cmath>
+#include <limits>
 
 #include "../shared/ear_max_test.h"
 #include "mc.ear.objects_tilde.h"
@@ -119,6 +120,31 @@ SCENARIO("mc.ear.objects~ renders several objects to a multichannel loudspeaker 
                 for (size_t i = 0; i < obj.object_count(); ++i) {
                     REQUIRE(obj.metadata(i).azimuth == Approx(0.0));
                 }
+            }
+        }
+
+        WHEN("a non-finite value is sent as a parameter") {
+            obj.setvalue(atoms{ 1, symbol("azimuth"), std::numeric_limits<double>::quiet_NaN() });
+            obj.setvalue(atoms{ 1, symbol("position"), std::numeric_limits<double>::infinity(), 0.0 });
+            THEN("it is rejected and the gains stay finite") {
+                REQUIRE(obj.metadata(0).azimuth == Approx(0.0));
+                for (auto g : obj.direct_gains(0)) {
+                    REQUIRE(std::isfinite(g));
+                }
+            }
+        }
+
+        WHEN("a vector of a different size than configured arrives") {
+            obj.applyvalues(atoms{ symbol("azimuth"), 30.0 });
+            mc_audio_io wrong(1, k_channels_050, k_block * 2);
+            std::fill(wrong.ins[0].begin(), wrong.ins[0].end(), 1.0);
+            obj(wrong.input(), wrong.output());
+            THEN("the output is silent, and the gain state survives for the configured size") {
+                REQUIRE(wrong.outs[k_m030][k_block * 2 - 1] == Approx(0.0).margin(1e-12));
+                mc_audio_io right(1, k_channels_050, k_block);
+                std::fill(right.ins[0].begin(), right.ins[0].end(), 1.0);
+                obj(right.input(), right.output());
+                REQUIRE(right.outs[k_m030][k_block - 1] == Approx(1.0));
             }
         }
 
