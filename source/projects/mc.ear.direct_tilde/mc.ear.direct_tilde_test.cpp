@@ -91,6 +91,30 @@ SCENARIO("mc.ear.direct~ renders a channel bed to a multichannel loudspeaker sig
             }
         }
 
+        WHEN("align is switched off and on again around a silent interval") {
+            obj.inputlayout(atoms{ symbol("0+5+0") });
+            mc_audio_io io(1, k_channels_450, k_block);
+            io.ins[0][0] = 1.0;    // an impulse enters the delay line with align on
+            obj(io.input(), io.output());
+            obj.align = false;
+            std::fill(io.ins[0].begin(), io.ins[0].end(), 0.0);
+            double off_energy = 0.0;
+            for (long block = 0; block < 8; ++block) {
+                obj(io.input(), io.output());
+                for (auto v : io.outs[0]) off_energy += v * v;
+            }
+            obj.align = true;
+            double on_energy = 0.0;
+            for (long block = 0; block < 8; ++block) {
+                obj(io.input(), io.output());
+                for (auto v : io.outs[0]) on_energy += v * v;
+            }
+            THEN("the bypassed interval is silent and the impulse is not replayed afterwards") {
+                REQUIRE(off_energy == Approx(0.0).margin(1e-12));
+                REQUIRE(on_energy == Approx(0.0).margin(1e-12));
+            }
+        }
+
         // the remaining scenarios look at the output within the first block
         obj.align = false;
         REQUIRE(obj.latency() == 0);
