@@ -19,6 +19,7 @@ and unit tests.
 | `mc.ear.encode~` | Multichannel ambisonic encoder, the counterpart of `mc.ear.objects~`: every input channel is an object positioned with the same messages, the output carries the summed ambisonic components in ACN order. |
 | `ear.adm` | Reads and writes ADM files (BW64 with ADM metadata): resolves a file's rendering items like the EAR, plays its object metadata to the renderers with the reference's interpolation rules, and captures object messages to write them with recorded audio as a new ADM file. |
 | `mc.ear.select~` | Picks channels of a multichannel signal by number, to route the tracks of a file (as `ear.adm` reports them) to the renderer that handles them. |
+| `mc.ear.play~` | Plays an ADM file, audio and metadata together: the audio is streamed from disk to three multichannel outlets already routed for the three renderers, and the metadata is emitted from the audio clock. Plays files `mc.sfplay~` cannot open (RF64/BW64 over 4 GB). |
 
 All objects take a BS.2051 layout name as argument (`0+2+0`, `0+5+0`, `2+5+0`,
 `4+5+0`, `4+5+1`, `3+7+0`, `4+9+0`, `9+10+3`, `0+7+0`, `4+7+0`); the default is
@@ -188,6 +189,41 @@ and a `chna` entry, with one `audioBlockFormat` per captured change
 writes the metadata alone, and `clear` discards the capture. `@chans` sets
 the number of objects captured.
 
+**Playing with one transport: `mc.ear.play~`.** `ear.adm` with `mc.sfplay~`
+runs two transports, Max's scheduler for the metadata and the audio for the
+sound, which drift apart over a long file and need `mc.ear.select~` to route
+the tracks. `mc.ear.play~` does both itself: `open file.wav` reads the ADM
+(the same reports and static metadata as `ear.adm`, without the `tracks`
+lists) and opens the audio for streaming; the three multichannel outlets
+carry the Objects tracks, the DirectSpeakers tracks and the HOA components,
+in item order, so they connect straight to `mc.ear.objects~`,
+`mc.ear.direct~` and `mc.ear.hoa~` (the channel counts follow the file when
+the audio is restarted, as with `mc.ear.select~`). `start` (or `1`) plays
+from the beginning, `stop` (or `0`), `pause`, `resume` and `seek ms` control
+the transport, `@loop 1` starts over at the end instead of sending `end`.
+The Objects blocks are emitted by the audio thread's clock: one signal
+vector before a block starts, the main thread is woken to send the block's
+messages (with the same `setvalue n ramp ms` as `ear.adm`), so audio and
+metadata cannot drift apart; the remaining offset is Max's main-thread
+latency, under a few milliseconds. A reader thread streams the audio in
+chunks through a ring buffer, so the audio thread never touches the disk;
+when the disk falls behind, the vectors that could not be filled are
+counted and reported in the Max console. Files over 4 GB (RF64/BW64) play.
+No sample-rate conversion is done: a file whose rate differs from the
+audio's plays at the wrong speed, with a warning.
+
+```
+[open file.wav( [start(
+|
+[mc.ear.play~]
+|   |   |   |   |   |   |
+|   |   |   |   |   |   +-- info
+|   |   |   +---+---+------ objects / direct / hoa messages
+|   |   +------------------ [mc.ear.hoa~ 4+5+0]
+|   +---------------------- [mc.ear.direct~ 4+5+0]
++-------------------------- [mc.ear.objects~ 4+5+0]
+```
+
 Limitations of this first version: zone exclusion is not read or written
 (libadm does not support it); muted objects, silent tracks, tracks missing
 from the `chna` chunk, cartesian DirectSpeakers positions and unsupported
@@ -195,8 +231,8 @@ types are skipped with a warning on the info outlet; `audioObject`
 importance and complementary object groups are not interpreted (every
 object is rendered); nested objects use the innermost start and duration;
 when a file has several HOA scenes only the first is sent to the hoa
-outlet; and the file must be one Max can open with `mc.sfplay~` (RIFF,
-under 4 GB).
+outlet; and `ear.adm` with `mc.sfplay~` needs a file Max can open (RIFF,
+under 4 GB), where `mc.ear.play~` does not.
 
 ### ear.direct
 
@@ -404,7 +440,10 @@ source/projects/mc.ear.hoa_tilde/      mc.ear.hoa~ (multichannel ambisonic decod
 source/projects/mc.ear.encode_tilde/   mc.ear.encode~ (multichannel ambisonic encoder)
 source/projects/mc.ear.select_tilde/   mc.ear.select~ (channel selection for routing file tracks)
 source/projects/ear.adm/               ear.adm (ADM file reading and writing; test_data/ holds the EAR-generated fixture)
+source/projects/mc.ear.play_tilde/     mc.ear.play~ (plays an ADM file: streamed audio and metadata together)
 source/projects/shared/ear_max_adm.h   rendering item selection and block timing like the EAR, ADM document building
+source/projects/shared/ear_max_adm_player.h  the loaded file's items, their reports and timed emission (ear.adm, mc.ear.play~)
+source/projects/shared/ear_max_stream.h      disk streaming of a BW64 file: reader thread and ring buffer for the audio thread
 source/libadm/                         libadm, the EBU ADM library (submodule)
 source/libbw64/                        libbw64, the EBU BW64 file library (submodule, header-only)
 source/projects/shared/ear_max_hoa.h   spherical harmonics in the EAR's conventions
@@ -444,6 +483,12 @@ page is not well-formed XML.
 - The multichannel outlets use the Max C API directly (`multichanneloutputs`
   and `inputchanged`, registered from `maxclass_setup`), since Min only
   supports multichannel inlets.
+- `mc.ear.play~` streams the file on its own thread: the reader keeps a
+  ring buffer filled in 4096-frame chunks and performs the seeks and the
+  file hand-over; the audio thread `try_lock`s the ring only to pull a
+  vector through the routing table, and never blocks, allocates or frees.
+  It wakes the main thread with a Max queue to emit the metadata that
+  falls within the next vector.
 - The decorrelation path uses libear's partitioned block convolver at the
   current signal vector size and its delay buffer for the direct path, exactly
   as described in `ear::GainCalculatorObjects`.
@@ -457,11 +502,10 @@ page is not well-formed XML.
 - Custom reproduction screens (currently the default screen is used for
   `screenref` and screen edge lock).
 - `ear.hoa`: control-rate HOA decoding matrix, and HOA `screenRef` once libear implements it.
-- ADM files, next phases: `mc.ear.play~` and `mc.ear.record~`, signal
-  objects that play and record the audio of a BW64 file themselves
-  (sample-accurate metadata, files over 4 GB and BW64-only headers),
-  DirectSpeakers and HOA capture for writing, and zone exclusion once libadm
-  supports it.
+- ADM files, next phases: `mc.ear.record~`, the recording counterpart of
+  `mc.ear.play~` (audio and captured metadata written together, files over
+  4 GB), DirectSpeakers and HOA capture for writing, sample-rate conversion
+  in `mc.ear.play~`, and zone exclusion once libadm supports it.
 
 ## License
 

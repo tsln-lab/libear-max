@@ -315,6 +315,22 @@ SCENARIO("ear.adm reads the rendering items of an ADM file like the EAR") {
             }
         }
 
+        WHEN("a file that does not exist is read afterwards") {
+            obj.time(atoms{ 1000.0 });
+            clear_outputs(obj);
+            obj.read(atoms{ symbol(std::string(EARMAX_TEST_DATA_DIR) + "/missing.wav") });
+            THEN("the previous file is gone as well: nothing plays and a programme change does not bring it back") {
+                REQUIRE_FALSE(obj.loaded());
+                REQUIRE(contains(messages(obj, k_info), "file none"));
+                obj.programme(atoms{ 1 });
+                REQUIRE_FALSE(obj.loaded());
+                clear_outputs(obj);
+                obj.time(atoms{ 0.0 });
+                obj.step();
+                REQUIRE(messages(obj, k_objects).empty());
+            }
+        }
+
         WHEN("the file is read again after a time change") {
             obj.time(atoms{ 2000.0 });
             clear_outputs(obj);
@@ -329,6 +345,7 @@ SCENARIO("ear.adm reads the rendering items of an ADM file like the EAR") {
     GIVEN("an instance reading a file that does not exist") {
         test_wrapper<ear_adm> an_instance;
         ear_adm& obj = an_instance;
+        obj.programme(atoms{ 2 });    // before any file: remembered, no error
         obj.read(atoms{ symbol(std::string(EARMAX_TEST_DATA_DIR) + "/missing.wav") });
         THEN("nothing is loaded and the transport does nothing") {
             REQUIRE_FALSE(obj.loaded());
