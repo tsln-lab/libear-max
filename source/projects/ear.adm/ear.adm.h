@@ -9,6 +9,7 @@
 #pragma once
 
 #include "../shared/ear_max.h"
+#include "../shared/ear_max_adm_capture.h"
 #include "../shared/ear_max_adm_player.h"
 
 #include <cmath>
@@ -44,17 +45,10 @@ private:
     admio::item_player m_player;
     bool m_running{ false };
 
-    // capturing
-    struct capture_slot {
-        std::string name;
-        admio::object_state state;
-        double ramp_ms{ -1.0 };    // per-object interpolation time; negative = the ramp attribute
-        std::vector<admio::captured_block> blocks;
-    };
-    std::vector<capture_slot> m_slots;
-    bool m_capturing{ false };
+    // capturing: the objects and their timelines live in the capture shared
+    // with mc.ear.record~; the clock (Max's scheduler) is here
+    admio::object_capture m_capture;
     double m_capture_origin{ 0.0 };    // scheduler time (ms) when the capture started
-    double m_capture_last{ 0.0 };      // last captured time in seconds
 
 public:
     inlet<> in_main{ this, "(read/time/start/stop/seek) play a file's metadata; (record/write/setvalue...) capture metadata" };
@@ -65,7 +59,8 @@ public:
 
     ear_adm(const atoms& args = {})
     {
-        resize_slots(static_cast<size_t>(static_cast<int>(chans)));
+        (void)args;
+        m_capture.resize(static_cast<size_t>(static_cast<int>(chans)));
     }
 
     // ------------------------------------------------------------------
@@ -76,7 +71,9 @@ public:
         description{ "Default interpolation time in milliseconds written for captured changes, as the renderer's "
                      "ramp attribute; 'setvalue N ramp ms' overrides it per object (a negative value returns to it)." },
         setter{ MIN_FUNCTION {
-            return { std::max(0.0, static_cast<double>(args[0])) };
+            const double ms = std::max(0.0, static_cast<double>(args[0]));
+            m_capture.set_default_ramp(ms);
+            return { ms };
         } } };
 
     attribute<int> chans{ this, "chans", 16,
@@ -84,7 +81,7 @@ public:
         setter{ MIN_FUNCTION {
             int n = static_cast<int>(args[0]);
             n = std::max(1, std::min(n, 1024));
-            resize_slots(static_cast<size_t>(n));
+            m_capture.resize(static_cast<size_t>(n));
             return { n };
         } } };
 
@@ -165,9 +162,9 @@ public:
             if (m_timer) {
                 m_timer->stop();
             }
-            if (m_capturing) {
-                m_capturing = false;
-                out_info.send("captured", static_cast<int>(m_slots.size()), m_capture_last * 1000.0);
+            if (m_capture.capturing()) {
+                m_capture.end();
+                out_info.send("captured", static_cast<int>(m_capture.size()), m_capture.last_time() * 1000.0);
             }
             return {};
         } };
@@ -205,13 +202,7 @@ public:
 
     message<> clear{ this, "clear", "Discard the captured timeline and reset every object's parameters.",
         MIN_FUNCTION {
-            m_capturing = false;
-            for (auto& slot : m_slots) {
-                slot.blocks.clear();
-                slot.state = admio::object_state();
-                slot.ramp_ms = -1.0;
-            }
-            m_capture_last = 0.0;
+            m_capture.clear();
             return {};
         } };
 
@@ -222,11 +213,9 @@ public:
                 return {};
             }
             const long index = static_cast<long>(static_cast<double>(args[0]));
-            if (index < 1 || static_cast<size_t>(index) > m_slots.size()) {
-                cerr << "name: object number out of range 1.." << m_slots.size() << endl;
-                return {};
+            if (index < 1 || !m_capture.set_name(static_cast<size_t>(index - 1), std::string(args[1]))) {
+                cerr << "name: object number out of range 1.." << m_capture.size() << endl;
             }
-            m_slots[static_cast<size_t>(index - 1)].name = std::string(args[1]);
             return {};
         } };
 
@@ -243,13 +232,13 @@ public:
             try {
                 auto reader = bw64::readFile(in);
                 const double length = static_cast<double>(reader->numberOfFrames()) / reader->sampleRate();
-                const size_t objects = std::min<size_t>(m_slots.size(), reader->channels());
-                if (reader->channels() < m_slots.size()) {
+                const size_t objects = std::min<size_t>(m_capture.size(), reader->channels());
+                if (reader->channels() < m_capture.size()) {
                     cerr << "the audio file has " << reader->channels() << " channels; only the first " << objects
                          << " objects are written" << endl;
                 }
                 std::vector<bw64::AudioId> chna_ids;
-                auto doc = admio::build_document(programme_name(), captured_objects(objects, length), length, chna_ids);
+                auto doc = admio::build_document(programme_name(), m_capture.objects(objects), length, chna_ids);
                 reader.reset();
                 const uint64_t frames = admio::write_file(out, in, doc, chna_ids);
                 out_info.send("written", symbol(out), static_cast<int>(objects), static_cast<double>(frames));
@@ -268,19 +257,19 @@ public:
                 cerr << "writexml needs an output path" << endl;
                 return {};
             }
-            double length = m_capture_last;
+            double length = m_capture.last_time();
             if (args.size() > 1 && atom_is_numeric(args[1])) {
                 length = std::max(0.0, static_cast<double>(args[1]));
             }
             try {
                 std::vector<bw64::AudioId> chna_ids;
-                auto doc = admio::build_document(programme_name(), captured_objects(m_slots.size(), length), length, chna_ids);
+                auto doc = admio::build_document(programme_name(), m_capture.objects(m_capture.size()), length, chna_ids);
                 std::ofstream file(admio::resolve_path(std::string(args[0]), false));
                 if (!file) {
                     throw std::runtime_error("cannot open the file for writing");
                 }
                 file << admio::to_xml(doc);
-                out_info.send("written", args[0], static_cast<int>(m_slots.size()));
+                out_info.send("written", args[0], static_cast<int>(m_capture.size()));
             }
             catch (const std::exception& e) {
                 cerr << "writexml: " << e.what() << endl;
@@ -300,8 +289,8 @@ public:
                 return {};
             }
             const long index = static_cast<long>(static_cast<double>(args[0]));
-            if (index < 0 || static_cast<size_t>(index) > m_slots.size()) {
-                cerr << "setvalue: object number out of range 0.." << m_slots.size() << endl;
+            if (index < 0 || static_cast<size_t>(index) > m_capture.size()) {
+                cerr << "setvalue: object number out of range 0.." << m_capture.size() << endl;
                 return {};
             }
             const std::string parameter = args[1];
@@ -323,7 +312,7 @@ public:
                 return {};
             }
             const std::string parameter = args[0];
-            const size_t n = std::min(args.size() - 1, m_slots.size());
+            const size_t n = std::min(args.size() - 1, m_capture.size());
             for (size_t i = 0; i < n; ++i) {
                 capture_one(i, parameter, atoms{ args[i + 1] });
             }
@@ -413,7 +402,7 @@ public:
 
     const std::vector<admio::captured_block>& captured(size_t i) const
     {
-        return m_slots[i].blocks;
+        return m_capture.blocks(i);
     }
 
     bool running() const
@@ -440,11 +429,6 @@ public:
 
 private:
     double m_capture_time_override{ -1.0 };
-
-    static bool same_time(double a, double b)
-    {
-        return std::abs(a - b) < 1e-6;
-    }
 
     std::string programme_name() const
     {
@@ -556,163 +540,31 @@ private:
 
     // ---- capturing ---------------------------------------------------
 
-    void resize_slots(size_t n)
-    {
-        const size_t old = m_slots.size();
-        m_slots.resize(n);
-        for (size_t i = old; i < n; ++i) {
-            m_slots[i].name = "object " + std::to_string(i + 1);
-        }
-    }
-
     void begin_capture(double scheduler_ms)
     {
         m_capture_origin = scheduler_ms;
-        m_capture_last = 0.0;
-        m_capturing = true;
-        for (auto& slot : m_slots) {
-            slot.blocks.clear();
-            slot.blocks.push_back({ 0.0, 0.0, slot.state });
-        }
+        m_capture.begin();
     }
 
-    void record_change(size_t i)
+    /// the time of a change on the capture's clock: seconds since 'record'
+    double capture_time() const
     {
-        if (!m_capturing) {
-            return;
-        }
-        capture_slot& slot = m_slots[i];
-        const double t = std::max(0.0, (now_ms() - m_capture_origin) / 1000.0);
-        const double ramp_seconds = (slot.ramp_ms < 0.0 ? static_cast<double>(ramp) : slot.ramp_ms) / 1000.0;
-        m_capture_last = std::max(m_capture_last, t);
-        if (!slot.blocks.empty() && same_time(slot.blocks.back().time, t)) {
-            slot.blocks.back().state = slot.state;    // several parameters at the same time: one block
-            slot.blocks.back().ramp = ramp_seconds;
-            return;
-        }
-        slot.blocks.push_back({ t, ramp_seconds, slot.state });
+        return m_capture.capturing() ? std::max(0.0, (now_ms() - m_capture_origin) / 1000.0) : 0.0;
     }
 
     void capture_one(size_t i, const std::string& parameter, const atoms& values)
     {
         std::string error;
-        if (apply_parameter(m_slots[i], parameter, values, error)) {
-            if (parameter != "ramp") {
-                record_change(i);
-            }
-        }
-        else {
+        if (!m_capture.apply_one(i, parameter, values, capture_time(), error)) {
             cerr << "object " << (i + 1) << ": " << error << endl;
         }
     }
 
     void capture_all(const std::string& parameter, const atoms& values)
     {
-        for (size_t i = 0; i < m_slots.size(); ++i) {
-            std::string error;
-            if (!apply_parameter(m_slots[i], parameter, values, error)) {
-                if (i == 0) {
-                    cerr << error << endl;
-                }
-                return;
-            }
-            if (parameter != "ramp") {
-                record_change(i);
-            }
+        std::string error;
+        if (!m_capture.apply_all(parameter, values, capture_time(), error)) {
+            cerr << error << endl;
         }
-    }
-
-    static bool number_at(const atoms& values, size_t i, double& out, std::string& error, const char* what)
-    {
-        if (values.size() <= i || !atom_is_numeric(values[i]) || !std::isfinite(static_cast<double>(values[i]))) {
-            error = std::string(what) + " needs a finite number";
-            return false;
-        }
-        out = static_cast<double>(values[i]);
-        return true;
-    }
-
-    /// apply one mc.ear.objects~ parameter to a captured object's state
-    static bool apply_parameter(capture_slot& slot, const std::string& name, const atoms& values, std::string& error)
-    {
-        admio::object_state& s = slot.state;
-        double v = 0.0;
-        if (name == "azimuth") return number_at(values, 0, s.azimuth, error, "azimuth");
-        if (name == "elevation") return number_at(values, 0, s.elevation, error, "elevation");
-        if (name == "distance") return number_at(values, 0, s.distance, error, "distance");
-        if (name == "x") return number_at(values, 0, s.x, error, "x");
-        if (name == "y") return number_at(values, 0, s.y, error, "y");
-        if (name == "z") return number_at(values, 0, s.z, error, "z");
-        if (name == "width") return number_at(values, 0, s.width, error, "width");
-        if (name == "height") return number_at(values, 0, s.height, error, "height");
-        if (name == "depth") return number_at(values, 0, s.depth, error, "depth");
-        if (name == "gain") return number_at(values, 0, s.gain, error, "gain");
-        if (name == "diffuse") return number_at(values, 0, s.diffuse, error, "diffuse");
-        if (name == "channellock_distance") return number_at(values, 0, s.channellock_distance, error, "channellock_distance");
-        if (name == "divergence") return number_at(values, 0, s.divergence, error, "divergence");
-        if (name == "divergence_range") return number_at(values, 0, s.divergence_range, error, "divergence_range");
-        if (name == "ramp") {
-            if (!number_at(values, 0, v, error, "ramp")) return false;
-            slot.ramp_ms = v < 0.0 ? -1.0 : v;    // negative: back to the ramp attribute, like the renderers
-            return true;
-        }
-        if (name == "cartesian" || name == "channellock" || name == "screenref") {
-            if (!number_at(values, 0, v, error, name.c_str())) return false;
-            const bool flag = v != 0.0;
-            if (name == "cartesian") s.cartesian = flag;
-            else if (name == "channellock") s.channellock = flag;
-            else s.screenref = flag;
-            return true;
-        }
-        if (name == "screenedgelock_h" || name == "screenedgelock_v") {
-            if (values.empty() || !atom_is_symbol(values[0])) {
-                error = name + " needs a symbol";
-                return false;
-            }
-            const std::string edge = values[0];
-            if (name == "screenedgelock_h") {
-                if (edge != "none" && edge != "left" && edge != "right") { error = "screenedgelock_h must be none, left or right"; return false; }
-                s.screenedgelock_h = edge;
-            }
-            else {
-                if (edge != "none" && edge != "top" && edge != "bottom") { error = "screenedgelock_v must be none, top or bottom"; return false; }
-                s.screenedgelock_v = edge;
-            }
-            return true;
-        }
-        if (name == "position" || name == "list") {
-            if (values.size() < 2) {
-                error = "position needs at least 2 numbers: azimuth elevation [distance] or x y z";
-                return false;
-            }
-            double a = 0.0, b = 0.0, c = s.cartesian ? s.z : s.distance;
-            if (!number_at(values, 0, a, error, "position") || !number_at(values, 1, b, error, "position")) return false;
-            if (values.size() > 2 && !number_at(values, 2, c, error, "position")) return false;
-            if (s.cartesian) { s.x = a; s.y = b; s.z = c; }
-            else { s.azimuth = a; s.elevation = b; s.distance = c; }
-            return true;
-        }
-        if (name == "zone") {
-            error = "zone exclusion cannot be written (not supported by libadm); ignored";
-            return false;
-        }
-        error = "unknown parameter: " + name;
-        return false;
-    }
-
-    std::vector<admio::captured_object> captured_objects(size_t count, double length) const
-    {
-        std::vector<admio::captured_object> objects;
-        for (size_t i = 0; i < count && i < m_slots.size(); ++i) {
-            admio::captured_object o;
-            o.name = m_slots[i].name;
-            o.blocks = m_slots[i].blocks;
-            if (o.blocks.empty()) {
-                o.blocks.push_back({ 0.0, 0.0, m_slots[i].state });    // never captured: a static object
-            }
-            objects.push_back(std::move(o));
-        }
-        (void)length;
-        return objects;
     }
 };
