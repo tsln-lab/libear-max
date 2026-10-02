@@ -126,3 +126,5 @@ SCENARIO("mc.ear.direct~ renders a channel bed to a multichannel loudspeaker sig
         }
     }
 }
+
+EARMAX_TEST_GENERATE_MAXREF(mc_ear_direct_tilde, "mc.ear.direct~")

@@ -16,7 +16,7 @@ public:
     MIN_AUTHOR{ "tsln-lab" };
     MIN_RELATED{ "ear.objects~, ear.direct" };
 
-    inlet<> in_main{ this, "(list) azimuth elevation [distance] or x y z; (bang) recalculate" };
+    inlet<> in_main{ this, "(list) azimuth elevation and optional distance, or x y z; (bang) recalculate" };
     outlet<> out_direct{ this, "(list) direct gains, one per loudspeaker" };
     outlet<> out_diffuse{ this, "(list) diffuse gains, one per loudspeaker" };
     outlet<> out_info{ this, "(anything) channels, positions, layouts" };
@@ -40,7 +40,7 @@ public:
             return {};
         } };
 
-    message<> list{ this, "list", "Set the position: azimuth elevation [distance] (polar) or x y z (cartesian).",
+    message<> list{ this, "list", "Set the position: azimuth elevation and optional distance (polar) or x y z (cartesian).",
         MIN_FUNCTION {
             set_position_from_atoms(args);
             return {};

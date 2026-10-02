@@ -82,3 +82,5 @@ SCENARIO("ear.direct maps DirectSpeakers channels onto a layout") {
         }
     }
 }
+
+EARMAX_TEST_GENERATE_MAXREF(ear_direct, "ear.direct")

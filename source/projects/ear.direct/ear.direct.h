@@ -29,7 +29,7 @@ public:
     std::vector<float> m_gains;
     bool m_suppress_notify{ false };
 
-    inlet<> in_main{ this, "(list) azimuth elevation [distance]; (speakerlabel) labels; (bang) recalculate" };
+    inlet<> in_main{ this, "(list) azimuth elevation and optional distance; (speakerlabel) labels; (bang) recalculate" };
     outlet<> out_gains{ this, "(list) gains, one per loudspeaker" };
     outlet<> out_info{ this, "(anything) channels, positions, layouts" };
 
@@ -129,7 +129,7 @@ public:
             return {};
         } };
 
-    message<> list{ this, "list", "Set the nominal position: azimuth elevation [distance].",
+    message<> list{ this, "list", "Set the nominal position: azimuth elevation and optional distance.",
         MIN_FUNCTION {
             if (args.size() < 2) {
                 cerr << "position needs at least 2 numbers: azimuth elevation [distance]" << endl;

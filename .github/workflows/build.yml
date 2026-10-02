@@ -146,6 +146,8 @@ jobs:
         run: cmake --build build --parallel
       - name: Unit tests
         run: ctest --test-dir build --output-on-failure
+      - name: Reference pages are well-formed XML
+        run: python3 tools/check_maxref.py tests/*.maxref.xml
 
   release:
     name: Publish GitHub release

@@ -17,8 +17,8 @@ public:
                      "with multichannel signal input and output. Every channel of the input is an object "
                      "with its own metadata; the output has one channel per loudspeaker of the BS.2051 "
                      "layout given as argument. Metadata is set for all objects with plain messages "
-                     "(e.g. 'diffuse 0.5'), for one object with 'setvalue <n> <parameter> ...', or spread "
-                     "over the objects with 'applyvalues <parameter> v1 v2 ...'." };
+                     "(e.g. 'diffuse 0.5'), for one object with 'setvalue N parameter values...', or spread "
+                     "over the objects with 'applyvalues parameter v1 v2 ...'." };
     MIN_TAGS{ "spatial audio, ADM, panning, audio, mc" };
     MIN_AUTHOR{ "tsln-lab" };
     MIN_RELATED{ "ear.objects~, ear.objects, mc.ear.direct~" };
@@ -105,7 +105,7 @@ public:
     // ------------------------------------------------------------------
 
     message<> setvalue{ this, "setvalue",
-        "Set a parameter of one object: 'setvalue <n> <parameter> <values...>' (n is 1-based; 0 sets all objects). "
+        "Set a parameter of one object: 'setvalue N parameter values...' (N is 1-based; 0 sets all objects). "
         "Parameters: azimuth elevation distance x y z cartesian width height depth gain diffuse channellock "
         "channellock_distance divergence divergence_range screenref screenedgelock_h screenedgelock_v position zone.",
         MIN_FUNCTION {
@@ -129,7 +129,7 @@ public:
         } };
 
     message<> applyvalues{ this, "applyvalues",
-        "Spread values over the objects: 'applyvalues <parameter> v1 v2 v3 ...' sets the parameter of object 1 to v1, "
+        "Spread values over the objects: 'applyvalues parameter v1 v2 v3 ...' sets the parameter of object 1 to v1, "
         "object 2 to v2 and so on.",
         MIN_FUNCTION {
             if (args.empty() || !atom_is_symbol(args[0])) {

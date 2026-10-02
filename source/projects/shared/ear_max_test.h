@@ -5,8 +5,11 @@
 #pragma once
 
 #include "c74_min_unittest.h"
+#include "c74_min_doc.h"
 
 #include <cstring>
+#include <fstream>
+#include <string>
 #include <vector>
 
 namespace earmax_test {
@@ -90,4 +93,21 @@ private:
         max::attr_args_process(self, static_cast<short>(args.size()), const_cast<max::t_atom*>(args.begin()));        \
         return self;                                                                                                  \
     }                                                                                                                 \
+    }
+
+/// Generate the object's reference page (docs/<name>.maxref.xml) into the
+/// test output directory, exactly as Min does when the external is first loaded
+/// in Max, so that the XML can be validated (tools/check_maxref.py). Min does
+/// not escape '<' and '>' in description strings, so a stray angle bracket
+/// in a description produces a reference page Max cannot parse.
+#define EARMAX_TEST_GENERATE_MAXREF(cls, max_name)                                                                     \
+    TEST_CASE("reference page for " max_name " is generated")                                                          \
+    {                                                                                                                  \
+        ext_main(nullptr);                                                                                             \
+        test_wrapper<cls> an_instance;                                                                                 \
+        cls& obj = an_instance;                                                                                        \
+        const std::string file = std::string(EARMAX_TEST_OUTPUT_DIR) + "/" + max_name + ".maxref.xml";                 \
+        c74::min::doc_generate<cls>(obj, file, max_name, #cls);                                                        \
+        std::ifstream check(file);                                                                                     \
+        REQUIRE(check.good());                                                                                         \
     }

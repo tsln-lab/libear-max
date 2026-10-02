@@ -195,3 +195,5 @@ SCENARIO("ear.objects calculates gains for a BS.2051 layout") {
         }
     }
 }
+
+EARMAX_TEST_GENERATE_MAXREF(ear_objects, "ear.objects")
