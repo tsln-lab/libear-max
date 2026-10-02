@@ -40,11 +40,42 @@ public:
     void configure(const ear::Layout& layout, size_t capacity, size_t block_size, double samplerate,
                    bool with_decorrelation = true, bool with_delay = false)
     {
-        m_outputs = layout.channels().size();
+        allocate(layout.channels().size(), capacity, block_size, samplerate);
+        m_with_decorrelation = with_decorrelation;
+        if ((with_decorrelation || with_delay) && block_size > 0) {
+            m_delay = std::make_unique<ear::dsp::DelayBuffer>(
+                m_outputs, static_cast<size_t>(ear::decorrelatorCompensationDelay()));
+        }
+        if (with_decorrelation && block_size > 0) {
+            m_context = std::make_unique<ear::dsp::block_convolver::Context>(block_size, ear::get_fft_kiss<float>());
+            const auto filters = ear::designDecorrelators<float>(layout);
+            for (size_t ch = 0; ch < m_outputs; ++ch) {
+                m_filters.emplace_back(*m_context, filters[ch].size(), filters[ch].data());
+                m_convolvers.push_back(
+                    std::make_unique<ear::dsp::block_convolver::BlockConvolver>(*m_context, m_filters.back()));
+            }
+        }
+        m_layout = layout;
+    }
+
+    /// Allocate a plain gain matrix with `outputs` output channels and neither
+    /// decorrelation nor delay, for renderers whose outputs are not
+    /// loudspeakers (an ambisonic encoder).
+    void configure(size_t outputs, size_t capacity, size_t block_size, double samplerate)
+    {
+        allocate(outputs, capacity, block_size, samplerate);
+        m_with_decorrelation = false;
+        m_layout = ear::Layout();
+    }
+
+private:
+    /// gain state and buffers for `outputs` channels; discards decorrelators and delay
+    void allocate(size_t outputs, size_t capacity, size_t block_size, double samplerate)
+    {
+        m_outputs = outputs;
         m_capacity = std::max<size_t>(1, capacity);
         m_block_size = block_size;
         m_samplerate = samplerate;
-        m_with_decorrelation = with_decorrelation;
 
         m_objects.clear();
         for (size_t i = 0; i < m_capacity; ++i) {
@@ -66,22 +97,9 @@ public:
         m_filters.clear();
         m_context.reset();
         m_delay.reset();
-        if ((with_decorrelation || with_delay) && block_size > 0) {
-            m_delay = std::make_unique<ear::dsp::DelayBuffer>(
-                m_outputs, static_cast<size_t>(ear::decorrelatorCompensationDelay()));
-        }
-        if (with_decorrelation && block_size > 0) {
-            m_context = std::make_unique<ear::dsp::block_convolver::Context>(block_size, ear::get_fft_kiss<float>());
-            const auto filters = ear::designDecorrelators<float>(layout);
-            for (size_t ch = 0; ch < m_outputs; ++ch) {
-                m_filters.emplace_back(*m_context, filters[ch].size(), filters[ch].data());
-                m_convolvers.push_back(
-                    std::make_unique<ear::dsp::block_convolver::BlockConvolver>(*m_context, m_filters.back()));
-            }
-        }
-        m_layout = layout;
     }
 
+public:
     bool configured() const
     {
         return m_block_size > 0 && !m_objects.empty();

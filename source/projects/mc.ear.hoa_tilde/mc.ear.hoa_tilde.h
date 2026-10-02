@@ -7,6 +7,7 @@
 
 #include "../shared/ear_max.h"
 #include "../shared/ear_max_dsp.h"
+#include "../shared/ear_max_hoa.h"
 #include "../shared/ear_max_mc.h"
 
 #include <cmath>
@@ -219,8 +220,7 @@ public:
     /// ACN channel index to (order, degree)
     static void acn_to_order_degree(int acn, int& n, int& m)
     {
-        n = static_cast<int>(std::floor(std::sqrt(static_cast<double>(acn))));
-        m = acn - n * n - n;
+        hoa::from_acn(acn, n, m);
     }
 
 private:
