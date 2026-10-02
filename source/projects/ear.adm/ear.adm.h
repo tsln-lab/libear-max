@@ -14,6 +14,7 @@
 #include <cmath>
 #include <fstream>
 #include <limits>
+#include <memory>
 
 using namespace earmax;
 
@@ -169,7 +170,9 @@ public:
     message<> stop{ this, "stop", "Stop the transport (and a running capture).",
         MIN_FUNCTION {
             m_running = false;
-            m_timer.stop();
+            if (m_timer) {
+                m_timer->stop();
+            }
             if (m_capturing) {
                 m_capturing = false;
                 out_info.send("captured", static_cast<int>(m_slots.size()), m_capture_last * 1000.0);
@@ -355,11 +358,23 @@ public:
     // ------------------------------------------------------------------
 
     // delivered on Max's main thread, like the messages that share the
-    // transport state (the renderers' messages are deferred there anyway)
-    timer<timer_options::defer_delivery> m_timer{ this, MIN_FUNCTION {
-        on_tick();
-        return {};
-    } };
+    // transport state (the renderers' messages are deferred there anyway).
+    // Created on first use: Min's mock kernel (the unit tests) starts a
+    // thread for every clock before the clock's own mutexes exist, which
+    // can abort the test binary; the tests step the transport without it.
+    using transport_timer = timer<timer_options::defer_delivery>;
+    std::unique_ptr<transport_timer> m_timer;
+
+    transport_timer& transport()
+    {
+        if (!m_timer) {
+            m_timer = std::make_unique<transport_timer>(this, MIN_FUNCTION {
+                on_tick();
+                return {};
+            });
+        }
+        return *m_timer;
+    }
 
     // ------------------------------------------------------------------
     // state access (tests)
@@ -498,7 +513,9 @@ private:
     void load(const std::string& path)
     {
         m_running = false;
-        m_timer.stop();
+        if (m_timer) {
+                m_timer->stop();
+            }
         try {
             m_file = admio::load_file(path);
         }
@@ -737,7 +754,7 @@ private:
             out_info.send("end", m_position * 1000.0);
             return;
         }
-        m_timer.delay((next - m_position) * 1000.0);
+        transport().delay((next - m_position) * 1000.0);
     }
 
     // ---- capturing ---------------------------------------------------
