@@ -158,7 +158,10 @@ jobs:
             exit 1
           fi
           python3 tools/check_maxref.py "${files[@]}"
-          if ! git diff --exit-code -- docs; then
+          # git status also catches a page that was generated but never committed
+          if [ -n "$(git status --porcelain -- docs)" ]; then
+            git status --short -- docs
+            git diff -- docs
             echo "::error::docs/ is out of date: run the unit tests and commit the regenerated reference pages"
             exit 1
           fi

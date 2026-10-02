@@ -224,7 +224,9 @@ public:
 
         const bool decorrelate = decorrelating();
         const bool delay = decorrelate || delay_compensating();
-        if (delay) {
+        if (m_delay) {
+            // keep the delay line running while it is bypassed, so that
+            // switching it back on does not replay audio from before the bypass
             m_delay->process(frames, m_direct_ptrs.data(), m_delayed_ptrs.data());
         }
         for (size_t ch = 0; ch < n_out; ++ch) {
