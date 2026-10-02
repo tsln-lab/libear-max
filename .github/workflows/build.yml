@@ -191,9 +191,11 @@ jobs:
         # The next step appends the package notes to the release body, so a
         # re-run on the same tag would list them twice. Cut the body at the
         # "### Packages" heading first; the release-please changelog above it
-        # is kept. Nothing to do when the release does not exist yet.
+        # is kept. Nothing to do when the release does not exist yet. The job
+        # has no checkout, so gh is told the repository explicitly.
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -eu
           if body=$(gh release view "$GITHUB_REF_NAME" --json body --jq .body 2>/dev/null) \
