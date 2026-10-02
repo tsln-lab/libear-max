@@ -5,9 +5,10 @@
 #pragma once
 
 #include "c74_min_unittest.h"
-#include "c74_min_doc.h"
+#include "ear_max_doc.h"
 
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -95,19 +96,21 @@ private:
     }                                                                                                                 \
     }
 
-/// Generate the object's reference page (docs/<name>.maxref.xml) into the
-/// test output directory, exactly as Min does when the external is first loaded
-/// in Max, so that the XML can be validated (tools/check_maxref.py). Min does
-/// not escape '<' and '>' in description strings, so a stray angle bracket
-/// in a description produces a reference page Max cannot parse.
+/// Generate the object's reference page, docs/<name>.maxref.xml in the
+/// package (EARMAX_DOCS_DIR, set by CMake), with the generator in
+/// ear_max_doc.h. The pages are committed and shipped with the package, so
+/// after changing a description run the tests and commit the regenerated
+/// page; CI checks that the committed pages are current and well-formed
+/// (tools/check_maxref.py).
 #define EARMAX_TEST_GENERATE_MAXREF(cls, max_name)                                                                     \
     TEST_CASE("reference page for " max_name " is generated")                                                          \
     {                                                                                                                  \
         ext_main(nullptr);                                                                                             \
         test_wrapper<cls> an_instance;                                                                                 \
         cls& obj = an_instance;                                                                                        \
-        const std::string file = std::string(EARMAX_TEST_OUTPUT_DIR) + "/" + max_name + ".maxref.xml";                 \
-        c74::min::doc_generate<cls>(obj, file, max_name, #cls);                                                        \
+        std::filesystem::create_directories(EARMAX_DOCS_DIR);                                                          \
+        const std::string file = std::string(EARMAX_DOCS_DIR) + "/" + max_name + ".maxref.xml";                        \
+        earmax::doc::generate<cls>(obj, file, max_name);                                                               \
         std::ifstream check(file);                                                                                     \
         REQUIRE(check.good());                                                                                         \
     }

@@ -98,7 +98,7 @@ jobs:
         # tar keeps the .mxo bundle permissions and ad-hoc code signature intact
         run: |
           mkdir -p dist/${PACKAGE_NAME}
-          cp -R externals help package-info.json License.md README.md dist/${PACKAGE_NAME}/
+          cp -R externals help docs package-info.json License.md README.md dist/${PACKAGE_NAME}/
           tar -C dist -czf ${PACKAGE_NAME}-macos.tar.gz ${PACKAGE_NAME}
       - uses: actions/upload-artifact@v4
         with:
@@ -124,7 +124,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist/${PACKAGE_NAME}
-          cp -R externals help package-info.json License.md README.md dist/${PACKAGE_NAME}/
+          cp -R externals help docs package-info.json License.md README.md dist/${PACKAGE_NAME}/
           rm -f dist/${PACKAGE_NAME}/externals/*.pdb dist/${PACKAGE_NAME}/externals/*.ilk dist/${PACKAGE_NAME}/externals/*.exp dist/${PACKAGE_NAME}/externals/*.lib
       - uses: actions/upload-artifact@v4
         with:
@@ -146,17 +146,22 @@ jobs:
         run: cmake --build build --parallel
       - name: Unit tests
         run: ctest --test-dir build --output-on-failure
-      - name: Reference pages are well-formed XML
-        # Every unit test generates its object's page into tests/, so exactly
-        # one page per external must exist before they are validated.
+      - name: Reference pages are committed, current and well-formed XML
+        # The unit tests regenerate docs/<name>.maxref.xml from the
+        # descriptions in the source (ear_max_doc.h); the committed pages
+        # must match, so that the package ships what the source says.
         run: |
           shopt -s nullglob
-          files=(tests/*.maxref.xml)
+          files=(docs/*.maxref.xml)
           if [ "${#files[@]}" -ne 5 ]; then
-            echo "expected 5 reference pages in tests/, found ${#files[@]}: ${files[*]}"
+            echo "expected 5 reference pages in docs/, found ${#files[@]}: ${files[*]}"
             exit 1
           fi
           python3 tools/check_maxref.py "${files[@]}"
+          if ! git diff --exit-code -- docs; then
+            echo "::error::docs/ is out of date: run the unit tests and commit the regenerated reference pages"
+            exit 1
+          fi
 
   release:
     name: Publish GitHub release
