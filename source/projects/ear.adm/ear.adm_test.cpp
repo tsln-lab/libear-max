@@ -329,6 +329,7 @@ SCENARIO("ear.adm reads the rendering items of an ADM file like the EAR") {
     GIVEN("an instance reading a file that does not exist") {
         test_wrapper<ear_adm> an_instance;
         ear_adm& obj = an_instance;
+        obj.programme(atoms{ 2 });    // before any file: remembered, no error
         obj.read(atoms{ symbol(std::string(EARMAX_TEST_DATA_DIR) + "/missing.wav") });
         THEN("nothing is loaded and the transport does nothing") {
             REQUIRE_FALSE(obj.loaded());
