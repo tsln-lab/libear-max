@@ -1,0 +1,36 @@
+name: Release Please
+
+# Keeps a release pull request open on main that bumps the version and updates
+# CHANGELOG.md from conventional commits (feat:, fix:, feat!: ...). Merging that
+# PR creates the vX.Y.Z tag and the GitHub release; the Build workflow is then
+# dispatched on the tag to build the externals and attach the packages.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      # A tag pushed with GITHUB_TOKEN does not trigger other workflows on its
+      # own, so start the Build workflow on the new tag explicitly. Its release
+      # job attaches the built packages to the release created above.
+      - name: Build and attach packages to the release
+        if: ${{ steps.release.outputs.release_created }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag_name }}
+        run: gh workflow run build.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG"
