@@ -17,7 +17,7 @@ public:
     MIN_DESCRIPTION{ "Render ADM DirectSpeakers channels (a channel bed) to loudspeaker signals with libear "
                      "(ITU-R BS.2127), with multichannel signal input and output. Every input channel is a "
                      "DirectSpeakers channel identified by speaker label or position; the output has one "
-                     "channel per loudspeaker of the BS.2051 layout given as argument. 'inputlayout <name>' "
+                     "channel per loudspeaker of the BS.2051 layout given as argument. 'inputlayout NAME' "
                      "labels the input channels after a BS.2051 layout, e.g. to render a 0+5+0 bed." };
     MIN_TAGS{ "spatial audio, ADM, panning, audio, mc" };
     MIN_AUTHOR{ "tsln-lab" };
@@ -134,7 +134,7 @@ public:
         } };
 
     message<> setvalue{ this, "setvalue",
-        "Set a parameter of one input channel: 'setvalue <n> <parameter> <values...>' (n is 1-based; 0 sets all). "
+        "Set a parameter of one input channel: 'setvalue N parameter values...' (N is 1-based; 0 sets all). "
         "Parameters: speakerlabel position azimuth elevation distance bounds lfe packformat.",
         MIN_FUNCTION {
             long index = 0;

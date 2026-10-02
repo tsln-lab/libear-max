@@ -197,3 +197,5 @@ SCENARIO("mc.ear.objects~ renders several objects to a multichannel loudspeaker 
         }
     }
 }
+
+EARMAX_TEST_GENERATE_MAXREF(mc_ear_objects_tilde, "mc.ear.objects~")

@@ -19,7 +19,7 @@ public:
     MIN_AUTHOR{ "tsln-lab" };
     MIN_RELATED{ "ear.objects, ear.direct, mc.ear.objects~" };
 
-    inlet<> in_main{ this, "(signal) object audio; (list) azimuth elevation [distance] or x y z" };
+    inlet<> in_main{ this, "(signal) object audio; (list) azimuth elevation and optional distance, or x y z" };
 
     ear_objects_tilde(const atoms& args = {})
     {
@@ -60,7 +60,7 @@ public:
             return args;
         } } };
 
-    message<> list{ this, "list", "Set the position: azimuth elevation [distance] (polar) or x y z (cartesian).",
+    message<> list{ this, "list", "Set the position: azimuth elevation and optional distance (polar) or x y z (cartesian).",
         MIN_FUNCTION {
             set_position_from_atoms(args);
             return {};

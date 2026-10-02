@@ -192,3 +192,5 @@ SCENARIO("ear.objects~ renders a mono object to loudspeaker signals") {
         }
     }
 }
+
+EARMAX_TEST_GENERATE_MAXREF(ear_objects_tilde, "ear.objects~")
