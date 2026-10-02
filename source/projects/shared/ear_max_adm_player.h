@@ -101,10 +101,17 @@ public:
     /// previous file is then unloaded). The position returns to 0.
     void load(const std::string& path)
     {
-        m_loaded = false;
-        m_file = load_file(path);
-        m_position = 0.0;
-        select(m_programme);
+        const int programme = m_programme;
+        unload();
+        try {
+            m_file = load_file(path);
+            select(programme);
+        }
+        catch (...) {
+            unload();    // nothing of the new file stays behind
+            m_programme = programme;
+            throw;
+        }
     }
 
     /// Select the audioProgramme to render (0-based) and resolve the items

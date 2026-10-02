@@ -227,6 +227,24 @@ SCENARIO("mc.ear.play~ plays the tracks of an ADM file to the renderers' outlets
                     obj(io.input(), io.output());
                     REQUIRE(io.outs[8][k_block - 1] == 0.0);
                 }
+
+                AND_WHEN("'start' is sent again") {
+                    clear_outputs(obj);
+                    obj.start();
+                    // a vector may run before the reader has rewound: the stale end must not stop the restart
+                    obj(io.input(), io.output());
+                    obj.flush();
+                    REQUIRE(obj.playing());
+                    REQUIRE(obj.wait_ready(k_ready_timeout_ms));
+                    obj(io.input(), io.output());
+                    obj.flush();
+                    THEN("the file plays from the beginning again") {
+                        REQUIRE(obj.playing());
+                        REQUIRE(io.outs[0][k_block - 1] == Approx(0.01).margin(1e-6));
+                        REQUIRE(count_prefix(messages(obj, k_info), "end ") == 0);
+                        REQUIRE(contains(messages(obj, k_objects), "setvalue 1 position 30 0 1"));
+                    }
+                }
             }
 
             AND_WHEN("it is paused and resumed") {

@@ -75,11 +75,14 @@ public:
         m_samplerate.store(reader ? reader->sampleRate() : 0);
         {
             std::lock_guard<std::mutex> lock(m_io_mutex);
+            // cleared before the request is visible: the reader thread cannot
+            // finish the reset and set them again before these stores land
+            m_ready.store(false, std::memory_order_release);
+            m_ended.store(false, std::memory_order_release);
             m_pending_reader = std::move(reader);
             m_has_pending_reader = true;
             m_pending_seek = k_no_frame;
         }
-        m_ready.store(false, std::memory_order_release);
         m_cv.notify_all();
     }
 
@@ -94,9 +97,10 @@ public:
     {
         {
             std::lock_guard<std::mutex> lock(m_io_mutex);
+            m_ready.store(false, std::memory_order_release);
+            m_ended.store(false, std::memory_order_release);
             m_pending_seek = std::min(frame, m_frames.load());
         }
-        m_ready.store(false, std::memory_order_release);
         m_cv.notify_all();
     }
 
@@ -240,6 +244,9 @@ private:
 
     // ---- reader thread -----------------------------------------------
 
+    /// The io mutex is held only to take requests and to wait: the disk
+    /// reads run without it, so open, seek and close never wait on them
+    /// (the file and the chunk buffer are touched by this thread only).
     void run()
     {
         std::unique_lock<std::mutex> lock(m_io_mutex);
@@ -247,26 +254,36 @@ private:
             if (m_has_pending_reader) {
                 m_reader = std::move(m_pending_reader);
                 m_has_pending_reader = false;
+                lock.unlock();
                 reset_ring(0);
+                lock.lock();
                 continue;
             }
             if (m_pending_seek != k_no_frame) {
                 const uint64_t frame = m_pending_seek;
                 m_pending_seek = k_no_frame;
+                lock.unlock();
                 reset_ring(frame);
+                lock.lock();
                 continue;
             }
-            if (m_reader && fill_chunk()) {
-                continue;    // more space may be free: keep filling
+            const bool have_file = m_reader != nullptr;
+            if (have_file) {
+                lock.unlock();
+                const bool filled = fill_chunk();
+                lock.lock();
+                if (filled) {
+                    continue;    // more space may be free: keep filling
+                }
             }
             // the ring is full, the file is at its end, or there is no file:
             // wait for a request, or look again shortly for freed space
-            m_cv.wait_for(lock, std::chrono::milliseconds(m_reader ? 5 : 50));
+            m_cv.wait_for(lock, std::chrono::milliseconds(have_file ? 5 : 50));
         }
     }
 
-    /// Reset the ring around `frame` (io mutex held): the audio thread is
-    /// kept out while the positions change, then the ring is prefilled.
+    /// Reset the ring around `frame`: the audio thread is kept out while the
+    /// positions change, then the ring is prefilled.
     void reset_ring(uint64_t frame)
     {
         {

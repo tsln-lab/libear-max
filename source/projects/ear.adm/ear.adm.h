@@ -486,6 +486,7 @@ private:
         }
         catch (const std::exception& e) {
             cerr << "read: " << e.what() << endl;
+            m_player.report(sinks());    // "file none": the previous file is gone too
             return;
         }
         announce();

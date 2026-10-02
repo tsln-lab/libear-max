@@ -262,7 +262,8 @@ public:
         // next vector, when the playback wrapped or ended
         const uint64_t after = m_stream.play_frame();
         const uint64_t next = m_next_boundary.load(std::memory_order_acquire);
-        if (after < before || m_stream.ended() || (next != admio::bw64_stream::k_no_frame && after + static_cast<uint64_t>(frames) >= next)) {
+        const bool ended = m_stream.ready() && m_stream.ended();    // not a stale end while a seek is pending
+        if (after < before || ended || (next != admio::bw64_stream::k_no_frame && after + static_cast<uint64_t>(frames) >= next)) {
             m_queue.set();
         }
     }
@@ -478,7 +479,7 @@ private:
         if (underruns > 0) {
             cerr << underruns << " signal vectors were not filled in time (disk too slow)" << endl;
         }
-        if (m_stream.ended() && m_playing.load(std::memory_order_acquire)) {
+        if (m_stream.ready() && m_stream.ended() && m_playing.load(std::memory_order_acquire)) {
             m_playing.store(false, std::memory_order_release);
             out_info.send("end", m_player.position() * 1000.0);
         }
