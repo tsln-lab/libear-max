@@ -313,9 +313,25 @@ private:
             m_reader.reset();
             return;
         }
-        while (fill_chunk()) {
+        while (!superseded() && fill_chunk()) {
         }
-        m_ready.store(true, std::memory_order_release);
+        // readiness is published in the same critical section as the check
+        // for a newer request: a request that arrived during this reset has
+        // cleared the flag, and the audio must stay silent until the reader
+        // has performed that one (otherwise the old file or position would
+        // play with the new routing or metadata)
+        std::lock_guard<std::mutex> lock(m_io_mutex);
+        if (m_running && !m_has_pending_reader && m_pending_seek == k_no_frame) {
+            m_ready.store(true, std::memory_order_release);
+        }
+    }
+
+    /// A newer request (or the shutdown) is waiting: the current reset or
+    /// prefill should stop.
+    bool superseded()
+    {
+        std::lock_guard<std::mutex> lock(m_io_mutex);
+        return !m_running || m_has_pending_reader || m_pending_seek != k_no_frame;
     }
 
     /// Read one chunk from the file into the ring when there is room for it.

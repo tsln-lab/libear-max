@@ -305,6 +305,18 @@ SCENARIO("mc.ear.play~ plays the tracks of an ADM file to the renderers' outlets
             }
         }
 
+        WHEN("a seek follows the open before the reader is ready") {
+            obj.open(atoms{ symbol(k_fixture) });
+            obj.seek(atoms{ 50.0 });
+            obj.resume();
+            REQUIRE(obj.wait_ready(k_ready_timeout_ms));
+            obj(io.input(), io.output());
+            THEN("the audio starts at the seek position, not at the start of the file") {
+                REQUIRE(obj.current_time() == Approx(0.05 + k_block / k_sr));
+                REQUIRE(io.outs[0][k_block - 1] == Approx(0.01).margin(1e-6));
+            }
+        }
+
         WHEN("a file that does not exist is opened") {
             obj.open(atoms{ symbol(std::string(EARMAX_TEST_DATA_DIR) + "/missing.wav") });
             THEN("nothing is loaded and the outlets are silent") {
