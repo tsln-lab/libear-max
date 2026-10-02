@@ -122,6 +122,9 @@ public:
 private:
     bool set_tracks(const atoms& args)
     {
+        if (args.size() > k_max_tracks) {
+            return false;    // more outputs than the audio thread's copy can hold
+        }
         std::vector<long> tracks;
         for (const auto& a : args) {
             if (!atom_is_numeric(a)) {

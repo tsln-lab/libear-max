@@ -98,6 +98,7 @@ SCENARIO("mc.ear.select~ routes the selected channels of a multichannel signal")
             obj.tracks(atoms{ std::numeric_limits<double>::infinity() });
             obj.tracks(atoms{ 1e300 });
             obj.tracks(atoms{ 1025 });
+            obj.tracks(atoms(1025, atom(1)));    // more channels than Max allows
             THEN("the previous selection stays, in the audio thread's copy too") {
                 REQUIRE(obj.selected() == std::vector<long>{ 6, 7 });
                 mc_audio_io io(8, 2, k_block);
