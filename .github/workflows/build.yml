@@ -187,6 +187,21 @@ jobs:
           cp macos/${PACKAGE_NAME}-macos.tar.gz ${PACKAGE_NAME}-${VERSION}-macos.tar.gz
           (cd windows && zip -r -q ../${PACKAGE_NAME}-${VERSION}-windows.zip ${PACKAGE_NAME})
           ls -l *.zip *.tar.gz
+      - name: Drop package notes left by a previous run of this job
+        # The next step appends the package notes to the release body, so a
+        # re-run on the same tag would list them twice. Cut the body at the
+        # "### Packages" heading first; the release-please changelog above it
+        # is kept. Nothing to do when the release does not exist yet.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          if body=$(gh release view "$GITHUB_REF_NAME" --json body --jq .body 2>/dev/null) \
+             && printf '%s\n' "$body" | grep -q '^### Packages'; then
+            printf '%s\n' "$body" | sed '/^### Packages/,$d' > release-notes.md
+            gh release edit "$GITHUB_REF_NAME" --notes-file release-notes.md
+            echo "Removed the package notes of a previous run from the release body"
+          fi
       - name: Create or update the release
         # release-please creates the release with the changelog as its notes
         # before dispatching this workflow on the tag; this step attaches the
