@@ -24,6 +24,13 @@
 	<!--MESSAGES-->
 
 	<methodlist>
+		<method name='align'>
+			<arglist>
+				<arg name='align' optional='0' type='int' />
+			</arglist>
+			<digest>Set the align attribute</digest>
+			<description>Set the <at>align</at> attribute. Delay the output by the latency of the object renderers (255 samples, the BS.2127 decorrelator compensation delay) so that a bed stays time-aligned with mc.ear.objects~ and ear.objects~ when their decorrelation is on, as the EAR reference renderer does. Turn off for zero latency when no decorrelating renderer is mixed in.</description>
+		</method>
 		<method name='anything'>
 			<digest>Any channel parameter sent as a message, such as 'packformat AP_00010003' or 'lfe 0', is applied to all input channels</digest>
 			<description>Any channel parameter sent as a message, such as 'packformat AP_00010003' or 'lfe 0', is applied to all input channels.</description>
@@ -70,6 +77,10 @@
 	<!--ATTRIBUTES-->
 
 	<attributelist>
+		<attribute name='align' get='1' set='1' type='long' size='1'>
+			<digest>Delay the output by the latency of the object renderers (255 samples, the BS.2127 decorrelator compensation delay) so that a bed stays time-aligned with mc.ear.objects~ and ear.objects~ when their decorrelation is on, as the EAR reference renderer does</digest>
+			<description>Delay the output by the latency of the object renderers (255 samples, the BS.2127 decorrelator compensation delay) so that a bed stays time-aligned with mc.ear.objects~ and ear.objects~ when their decorrelation is on, as the EAR reference renderer does. Turn off for zero latency when no decorrelating renderer is mixed in. Default: 1.</description>
+		</attribute>
 		<attribute name='chans' get='1' set='1' type='long' size='1'>
 			<digest>Maximum number of input channels</digest>
 			<description>Maximum number of input channels. Channels beyond this are ignored. Takes effect when the audio is restarted. Default: 16.</description>

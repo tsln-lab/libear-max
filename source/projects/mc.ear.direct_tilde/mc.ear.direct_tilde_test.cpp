@@ -63,6 +63,38 @@ SCENARIO("mc.ear.direct~ renders a channel bed to a multichannel loudspeaker sig
         obj.ramp = 0.0;
         obj.dspsetup(atoms{ 48000.0, k_block });
 
+        THEN("the output is delayed by the decorrelator compensation delay by default (align)") {
+            REQUIRE(static_cast<bool>(obj.align));
+            REQUIRE(obj.latency() == ear::decorrelatorCompensationDelay());
+        }
+
+        WHEN("an impulse is sent through an aligned bed channel") {
+            obj.inputlayout(atoms{ symbol("0+5+0") });
+            mc_audio_io io(1, k_channels_450, k_block);
+            std::vector<double> front;
+            for (long block = 0; block < 8; ++block) {
+                std::fill(io.ins[0].begin(), io.ins[0].end(), 0.0);
+                if (block == 0) {
+                    io.ins[0][0] = 1.0;
+                }
+                obj(io.input(), io.output());
+                front.insert(front.end(), io.outs[0].begin(), io.outs[0].end());
+            }
+            THEN("it arrives on M+030 exactly one latency later, like the direct path of the object renderers") {
+                const auto latency = static_cast<size_t>(obj.latency());
+                REQUIRE(latency == static_cast<size_t>(ear::decorrelatorCompensationDelay()));
+                for (size_t n = 0; n < latency; ++n) {
+                    REQUIRE(front[n] == Approx(0.0).margin(1e-12));
+                }
+                REQUIRE(front[latency] == Approx(1.0));
+                REQUIRE(front[latency + 1] == Approx(0.0).margin(1e-12));
+            }
+        }
+
+        // the remaining scenarios look at the output within the first block
+        obj.align = false;
+        REQUIRE(obj.latency() == 0);
+
         WHEN("a 0+5+0 bed is declared with inputlayout") {
             obj.inputlayout(atoms{ symbol("0+5+0") });
             THEN("the first six channels carry the 0+5+0 labels and the LFE flag") {

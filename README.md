@@ -75,6 +75,18 @@ labels the input channels after a BS.2051 layout (LFE channels included), so
 rendering a 5.1 bed to 9+10+3 is `[mc.ear.direct~ 9+10+3]` with
 `inputlayout 0+5+0`.
 
+#### Mixing beds and objects
+
+As in the EAR reference renderer, every item type is rendered to the same
+layout and the results are summed. `mc.ear.direct~` and `mc.ear.objects~`
+with the same layout argument produce the same channels in the same order,
+so connect both to the same mc inlet (Max sums them) or use `mc.+~`. The
+object renderers' decorrelation path has a latency of 255 samples; by default
+`mc.ear.direct~` delays its output by the same amount (`@align 1`), which is
+what the reference does, so a bed and the objects stay time-aligned. Set
+`@align 0` for zero latency when no decorrelating renderer is mixed in, or
+set `@decorrelate 0` on the object renderer instead.
+
 ### ear.direct
 
 Attributes `layout`, `azimuth`, `elevation`, `distance`, `lfe` (marks the

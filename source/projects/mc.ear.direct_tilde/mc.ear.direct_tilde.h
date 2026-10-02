@@ -92,6 +92,16 @@ public:
             return { ms };
         } } };
 
+    attribute<bool> align{ this, "align", true,
+        description{ "Delay the output by the latency of the object renderers (255 samples, the BS.2127 "
+                     "decorrelator compensation delay) so that a bed stays time-aligned with mc.ear.objects~ "
+                     "and ear.objects~ when their decorrelation is on, as the EAR reference renderer does. "
+                     "Turn off for zero latency when no decorrelating renderer is mixed in." },
+        setter{ MIN_FUNCTION {
+            m_bus.set_delay_compensation(static_cast<bool>(args[0]));
+            return args;
+        } } };
+
     // ------------------------------------------------------------------
     // messages
     // ------------------------------------------------------------------
@@ -196,7 +206,8 @@ public:
 
     message<> dspsetup{ this, "dspsetup",
         MIN_FUNCTION {
-            m_bus.configure(m_layout, m_channels.size(), static_cast<size_t>(vector_size()), samplerate(), false);
+            m_bus.configure(m_layout, m_channels.size(), static_cast<size_t>(vector_size()), samplerate(), false, true);
+            m_bus.set_delay_compensation(static_cast<bool>(align));
             for (size_t i = 0; i < m_channels.size(); ++i) {
                 m_bus.set_gains_now(i, m_channels[i].gains, m_silence);
             }
