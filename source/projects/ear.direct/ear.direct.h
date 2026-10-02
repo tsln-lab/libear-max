@@ -136,7 +136,7 @@ public:
                 return {};
             }
             for (const auto& a : args) {
-                if (!is_numeric(a)) {
+                if (!atom_is_numeric(a)) {
                     cerr << "position values must be numbers" << endl;
                     return {};
                 }
@@ -180,7 +180,7 @@ public:
             }
             std::vector<double> values;
             for (const auto& a : args) {
-                if (!is_numeric(a)) {
+                if (!atom_is_numeric(a)) {
                     cerr << "bounds values must be numbers" << endl;
                     return {};
                 }

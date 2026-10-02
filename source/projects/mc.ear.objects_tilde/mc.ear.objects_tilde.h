@@ -1,0 +1,322 @@
+/// @file
+/// @brief   mc.ear.objects~: render many ADM audio objects (one per input channel)
+///          to a multichannel loudspeaker signal.
+/// @license Use of this source code is governed by the MIT License found in the License.md file.
+
+#pragma once
+
+#include "../shared/ear_max.h"
+#include "../shared/ear_max_dsp.h"
+#include "../shared/ear_max_mc.h"
+
+using namespace earmax;
+
+class mc_ear_objects_tilde : public object<mc_ear_objects_tilde>, public mc_operator<> {
+public:
+    MIN_DESCRIPTION{ "Render ADM audio objects to loudspeaker signals with libear (ITU-R BS.2127), "
+                     "with multichannel signal input and output. Every channel of the input is an object "
+                     "with its own metadata; the output has one channel per loudspeaker of the BS.2051 "
+                     "layout given as argument. Metadata is set for all objects with plain messages "
+                     "(e.g. 'diffuse 0.5'), for one object with 'setvalue <n> <parameter> ...', or spread "
+                     "over the objects with 'applyvalues <parameter> v1 v2 ...'." };
+    MIN_TAGS{ "spatial audio, ADM, panning, audio, mc" };
+    MIN_AUTHOR{ "tsln-lab" };
+    MIN_RELATED{ "ear.objects~, ear.objects, mc.ear.direct~" };
+
+private:
+    // ------------------------------------------------------------------
+    // state (declared before the attributes: Min runs the attribute
+    // setters while constructing the attributes, so this must exist first)
+    // ------------------------------------------------------------------
+
+    struct object_slot {
+        object_metadata meta;
+        std::vector<float> direct;
+        std::vector<float> diffuse;
+    };
+
+    ear::Layout m_layout;
+    std::unique_ptr<ear::GainCalculatorObjects> m_calc;
+    std::vector<object_slot> m_objects;
+    long m_reported_overflow{ 0 };
+    bus_renderer m_bus;
+
+public:
+    inlet<> in_main{ this, "(multichannelsignal) object audio, one channel per object; (setvalue/applyvalues/parameters) metadata" };
+    outlet<> out_main{ this, "(multichannelsignal) loudspeaker signals in layout channel order", "multichannelsignal" };
+
+    mc_ear_objects_tilde(const atoms& args = {})
+    {
+        const std::string name = layout_from_args(args);
+        if (!apply_layout(name)) {
+            apply_layout(k_default_layout);
+        }
+        resize_objects(static_cast<size_t>(static_cast<int>(chans)));
+        // the chans attribute allocated the slots before the gain calculator
+        // existed, so calculate the initial gains now
+        for (size_t i = 0; i < m_objects.size(); ++i) {
+            update(i);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // attributes
+    // ------------------------------------------------------------------
+
+    attribute<symbol> layout{ this, "layout", k_default_layout,
+        description{ "ITU-R BS.2051 loudspeaker layout name, fixed at creation (give it as argument)." },
+        setter{ MIN_FUNCTION {
+            const std::string name = args[0];
+            if (m_calc && name != m_layout.name()) {
+                cerr << "layout cannot be changed after creation; create a new object with the layout as argument" << endl;
+            }
+            return { symbol(m_layout.name()) };
+        } } };
+
+    attribute<int> chans{ this, "chans", 16,
+        description{ "Maximum number of objects (input channels). Input channels beyond this are ignored. "
+                     "Takes effect when the audio is restarted." },
+        setter{ MIN_FUNCTION {
+            int n = static_cast<int>(args[0]);
+            n = std::max(1, std::min(n, 1024));
+            resize_objects(static_cast<size_t>(n));
+            return { n };
+        } } };
+
+    attribute<number> ramp{ this, "ramp", 10.0,
+        description{ "Gain interpolation time in milliseconds when metadata changes." },
+        setter{ MIN_FUNCTION {
+            const double ms = std::max(0.0, static_cast<double>(args[0]));
+            m_bus.set_ramp_ms(ms);
+            return { ms };
+        } } };
+
+    attribute<bool> decorrelate{ this, "decorrelate", true,
+        description{ "Pass the diffuse bus through the BS.2127 decorrelation filters and delay-compensate "
+                     "the direct bus (adds 255 samples of latency). The filters run once per loudspeaker, "
+                     "shared by all objects." },
+        setter{ MIN_FUNCTION {
+            m_bus.set_decorrelate(static_cast<bool>(args[0]));
+            return args;
+        } } };
+
+    // ------------------------------------------------------------------
+    // messages
+    // ------------------------------------------------------------------
+
+    message<> setvalue{ this, "setvalue",
+        "Set a parameter of one object: 'setvalue <n> <parameter> <values...>' (n is 1-based; 0 sets all objects). "
+        "Parameters: azimuth elevation distance x y z cartesian width height depth gain diffuse channellock "
+        "channellock_distance divergence divergence_range screenref screenedgelock_h screenedgelock_v position zone.",
+        MIN_FUNCTION {
+            long index = 0;
+            if (!parse_mc_index(args, m_objects.size(), index, [this](const std::string& m) { cerr << m << endl; })) {
+                return {};
+            }
+            if (args.size() < 2 || !atom_is_symbol(args[1])) {
+                cerr << "setvalue needs a parameter name after the input number" << endl;
+                return {};
+            }
+            const std::string name = args[1];
+            const atoms rest(args.begin() + 2, args.end());
+            if (index == 0) {
+                apply_all(name, rest);
+            }
+            else {
+                apply_one(static_cast<size_t>(index - 1), name, rest);
+            }
+            return {};
+        } };
+
+    message<> applyvalues{ this, "applyvalues",
+        "Spread values over the objects: 'applyvalues <parameter> v1 v2 v3 ...' sets the parameter of object 1 to v1, "
+        "object 2 to v2 and so on.",
+        MIN_FUNCTION {
+            if (args.empty() || !atom_is_symbol(args[0])) {
+                cerr << "applyvalues needs a parameter name followed by one value per object" << endl;
+                return {};
+            }
+            const std::string name = args[0];
+            const size_t n = std::min(args.size() - 1, m_objects.size());
+            for (size_t i = 0; i < n; ++i) {
+                apply_one(i, name, atoms{ args[i + 1] });
+            }
+            return {};
+        } };
+
+    message<> anything{ this, "anything",
+        "Any object parameter sent as a message (e.g. 'azimuth 30', 'diffuse 0.5', 'zone clear') is applied to all objects.",
+        MIN_FUNCTION {
+            if (args.empty() || !atom_is_symbol(args[0])) {
+                return {};
+            }
+            const std::string name = args[0];
+            apply_all(name, atoms(args.begin() + 1, args.end()));
+            return {};
+        } };
+
+    message<> list{ this, "list", "Set the position of all objects: azimuth elevation [distance] (polar) or x y z (cartesian).",
+        MIN_FUNCTION {
+            apply_all("position", args);
+            return {};
+        } };
+
+    message<> channels{ this, "channels", "Post the channel names of the layout to the Max console.",
+        MIN_FUNCTION {
+            std::string names;
+            for (const auto& name : m_layout.channelNames()) {
+                names += name + " ";
+            }
+            cout << m_layout.name() << ": " << names << endl;
+            return {};
+        } };
+
+    message<> dspsetup{ this, "dspsetup",
+        MIN_FUNCTION {
+            m_bus.configure(m_layout, m_objects.size(), static_cast<size_t>(vector_size()), samplerate());
+            for (size_t i = 0; i < m_objects.size(); ++i) {
+                m_bus.set_gains_now(i, m_objects[i].direct, m_objects[i].diffuse);
+            }
+            return {};
+        } };
+
+    message<> maxclass_setup{ this, "maxclass_setup",
+        MIN_FUNCTION {
+            c74::max::t_class* c = args[0];
+            mc_register_methods<mc_ear_objects_tilde>(c);
+            return {};
+        } };
+
+    // ------------------------------------------------------------------
+    // multichannel plumbing (see ear_max_mc.h)
+    // ------------------------------------------------------------------
+
+    long mc_output_channels(long) const
+    {
+        return static_cast<long>(channel_count());
+    }
+
+    long mc_input_changed(long, long channels)
+    {
+        if (channels > static_cast<long>(m_objects.size()) && channels != m_reported_overflow) {
+            m_reported_overflow = channels;
+            cerr << "input has " << channels << " channels but only " << m_objects.size()
+                 << " objects are allocated (see the chans attribute); extra channels are ignored" << endl;
+        }
+        return 0;    // the output channel count never changes
+    }
+
+    // ------------------------------------------------------------------
+    // audio
+    // ------------------------------------------------------------------
+
+    void operator()(audio_bundle input, audio_bundle output)
+    {
+        m_bus.process(input.samples(), static_cast<size_t>(input.channel_count()), output.samples(),
+                      static_cast<size_t>(output.channel_count()), static_cast<size_t>(input.frame_count()));
+    }
+
+    // ------------------------------------------------------------------
+    // state
+    // ------------------------------------------------------------------
+
+    size_t channel_count() const
+    {
+        return m_layout.channels().size();
+    }
+
+    size_t object_count() const
+    {
+        return m_objects.size();
+    }
+
+    const object_metadata& metadata(size_t i) const
+    {
+        return m_objects[i].meta;
+    }
+
+    const std::vector<float>& direct_gains(size_t i) const
+    {
+        return m_objects[i].direct;
+    }
+
+    int latency() const
+    {
+        return m_bus.latency();
+    }
+
+    const ear::Layout& current_layout() const
+    {
+        return m_layout;
+    }
+
+private:
+    bool apply_layout(const std::string& name)
+    {
+        try {
+            ear::Layout new_layout = ear::getLayout(name);
+            m_layout = std::move(new_layout);
+            m_calc = std::make_unique<ear::GainCalculatorObjects>(m_layout);
+            return true;
+        }
+        catch (const std::exception& e) {
+            cerr << e.what() << "; known layouts: " << layout_names_joined() << endl;
+            return false;
+        }
+    }
+
+    void resize_objects(size_t n)
+    {
+        const size_t old = m_objects.size();
+        m_objects.resize(n);
+        for (size_t i = old; i < n; ++i) {
+            m_objects[i].direct.assign(channel_count(), 0.0f);
+            m_objects[i].diffuse.assign(channel_count(), 0.0f);
+            update(i);
+        }
+    }
+
+    /// recalculate the gains of object i and hand them to the audio thread
+    void update(size_t i)
+    {
+        object_slot& slot = m_objects[i];
+        if (!m_calc) {
+            return;
+        }
+        slot.direct.resize(channel_count(), 0.0f);
+        slot.diffuse.resize(channel_count(), 0.0f);
+        if (!compute_object_gains(*m_calc, slot.meta.otm, slot.direct, slot.diffuse, [this, i](const std::string& m) {
+                cerr << "object " << (i + 1) << ": " << m << endl;
+            })) {
+            return;
+        }
+        if (initialized()) {
+            m_bus.set_targets(i, slot.direct, slot.diffuse);
+        }
+    }
+
+    void apply_one(size_t i, const std::string& name, const atoms& values)
+    {
+        if (m_objects[i].meta.apply(name, values, [this, i](const std::string& m) {
+                cerr << "object " << (i + 1) << ": " << m << endl;
+            })) {
+            update(i);
+        }
+    }
+
+    void apply_all(const std::string& name, const atoms& values)
+    {
+        for (size_t i = 0; i < m_objects.size(); ++i) {
+            bool ok = m_objects[i].meta.apply(name, values, [this, i](const std::string& m) {
+                if (i == 0) {
+                    cerr << m << endl;
+                }
+            });
+            if (!ok) {
+                return;    // same error for every object; reported once
+            }
+            update(i);
+        }
+    }
+
+};

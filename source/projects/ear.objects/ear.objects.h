@@ -28,8 +28,6 @@ public:
             apply_layout(k_default_layout);
         }
         layout = symbol(m_layout.name());
-        rebuild_position();
-        rebuild_channellock();
     }
 
     attribute<bool> autocalc{ this, "autocalc", true,
