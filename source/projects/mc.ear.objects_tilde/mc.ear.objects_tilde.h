@@ -35,6 +35,7 @@ private:
         object_metadata meta;
         std::vector<float> direct;
         std::vector<float> diffuse;
+        double ramp_ms{ -1.0 };    // per-object ramp override, negative for the ramp attribute
     };
 
     ear::Layout m_layout;
@@ -109,7 +110,8 @@ public:
     message<> setvalue{ this, "setvalue",
         "Set a parameter of one object: 'setvalue N parameter values...' (N is 1-based; 0 sets all objects). "
         "Parameters: azimuth elevation distance x y z cartesian width height depth gain diffuse channellock "
-        "channellock_distance divergence divergence_range screenref screenedgelock_h screenedgelock_v position zone.",
+        "channellock_distance divergence divergence_range screenref screenedgelock_h screenedgelock_v position zone, "
+        "and ramp (the interpolation time in milliseconds of the next changes of that object; negative returns to the ramp attribute).",
         MIN_FUNCTION {
             long index = 0;
             if (!parse_mc_index(args, m_objects.size(), index, [this](const std::string& m) { cerr << m << endl; })) {
@@ -293,12 +295,29 @@ private:
             return;
         }
         if (initialized()) {
-            m_bus.set_targets(i, slot.direct, slot.diffuse);
+            m_bus.set_targets(i, slot.direct, slot.diffuse, slot.ramp_ms);
         }
+    }
+
+    /// 'ramp' as a per-object parameter: the interpolation time of the next
+    /// changes of this object (ear.adm sends it with every block); a negative
+    /// value returns to the ramp attribute
+    bool apply_ramp(size_t i, const atoms& values)
+    {
+        if (values.empty() || !atom_is_numeric(values[0]) || !std::isfinite(static_cast<double>(values[0]))) {
+            cerr << "object " << (i + 1) << ": ramp needs a time in milliseconds" << endl;
+            return false;
+        }
+        m_objects[i].ramp_ms = static_cast<double>(values[0]);
+        return true;
     }
 
     void apply_one(size_t i, const std::string& name, const atoms& values)
     {
+        if (name == "ramp") {
+            apply_ramp(i, values);
+            return;
+        }
         if (m_objects[i].meta.apply(name, values, [this, i](const std::string& m) {
                 cerr << "object " << (i + 1) << ": " << m << endl;
             })) {
@@ -308,6 +327,11 @@ private:
 
     void apply_all(const std::string& name, const atoms& values)
     {
+        if (name == "ramp") {
+            for (size_t i = 0; i < m_objects.size() && apply_ramp(i, values); ++i) {
+            }
+            return;
+        }
         for (size_t i = 0; i < m_objects.size(); ++i) {
             bool ok = m_objects[i].meta.apply(name, values, [this, i](const std::string& m) {
                 if (i == 0) {

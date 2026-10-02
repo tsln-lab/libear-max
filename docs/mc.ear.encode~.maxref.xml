@@ -70,7 +70,7 @@
 		</method>
 		<method name='setvalue'>
 			<digest>Set a parameter of one object: 'setvalue N parameter values...' (N is 1-based; 0 sets all objects)</digest>
-			<description>Set a parameter of one object: 'setvalue N parameter values...' (N is 1-based; 0 sets all objects). Parameters that affect the encoding: azimuth elevation distance x y z cartesian gain position; the other mc.ear.objects~ parameters are accepted but ignored.</description>
+			<description>Set a parameter of one object: 'setvalue N parameter values...' (N is 1-based; 0 sets all objects). Parameters that affect the encoding: azimuth elevation distance x y z cartesian gain position; the other mc.ear.objects~ parameters are accepted but ignored; ramp sets the interpolation time in milliseconds of the next changes of that object (negative returns to the ramp attribute).</description>
 		</method>
 	</methodlist>
 

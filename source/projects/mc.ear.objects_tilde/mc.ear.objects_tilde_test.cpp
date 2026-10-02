@@ -123,6 +123,51 @@ SCENARIO("mc.ear.objects~ renders several objects to a multichannel loudspeaker 
             }
         }
 
+        WHEN("an object is given its own ramp time") {
+            obj.setvalue(atoms{ 1, symbol("ramp"), 100.0 });    // 4800 samples at 48 kHz
+            obj.setvalue(atoms{ 1, symbol("azimuth"), 30.0 });
+            obj.setvalue(atoms{ 2, symbol("azimuth"), 30.0 });    // the ramp attribute (0): immediate
+            mc_audio_io io(2, k_channels_050, k_block);
+            std::fill(io.ins[0].begin(), io.ins[0].end(), 1.0);
+            std::fill(io.ins[1].begin(), io.ins[1].end(), 1.0);
+            obj(io.input(), io.output());
+            THEN("only that object interpolates over its ramp (the others follow the attribute)") {
+                // object 1 moved 64 of 4800 samples towards M+030; object 2 is there already
+                const double expected = 1.0 + 64.0 / 4800.0;
+                REQUIRE(io.outs[k_m030][k_block - 1] == Approx(expected).margin(2.0 / 4800.0));
+                REQUIRE(io.outs[k_m000][k_block - 1] == Approx(1.0 - 64.0 / 4800.0).margin(2.0 / 4800.0));
+            }
+
+            AND_WHEN("a negative ramp returns the object to the attribute") {
+                obj.setvalue(atoms{ 1, symbol("ramp"), -1.0 });
+                obj.setvalue(atoms{ 1, symbol("azimuth"), -30.0 });
+                obj(io.input(), io.output());
+                THEN("the change is immediate again") {
+                    REQUIRE(io.outs[k_m_030][k_block - 1] == Approx(1.0));
+                }
+            }
+
+            AND_WHEN("the ramp is sent as a plain message") {
+                obj.anything(atoms{ symbol("ramp"), 50.0 });
+                obj.setvalue(atoms{ 0, symbol("azimuth"), -30.0 });
+                obj(io.input(), io.output());
+                THEN("every object interpolates over the new time") {
+                    REQUIRE(io.outs[k_m_030][k_block - 1] < 0.1);
+                    REQUIRE(io.outs[k_m_030][k_block - 1] > 0.0);
+                }
+            }
+
+            AND_WHEN("an invalid ramp is sent") {
+                obj.setvalue(atoms{ 1, symbol("ramp"), symbol("slow") });
+                obj.setvalue(atoms{ 1, symbol("ramp") });
+                THEN("the object keeps its ramp") {
+                    obj.setvalue(atoms{ 1, symbol("azimuth"), -30.0 });
+                    obj(io.input(), io.output());
+                    REQUIRE(io.outs[k_m_030][k_block - 1] < 0.1);
+                }
+            }
+        }
+
         WHEN("a non-finite value is sent as a parameter") {
             obj.setvalue(atoms{ 1, symbol("azimuth"), std::numeric_limits<double>::quiet_NaN() });
             obj.setvalue(atoms{ 1, symbol("position"), std::numeric_limits<double>::infinity(), 0.0 });
