@@ -150,8 +150,9 @@ public:
         return (decorrelating() || delay_compensating()) ? m_delay->get_delay() : 0;
     }
 
-    /// New target gains for input `i`; the audio thread ramps to them.
-    void set_targets(size_t i, const std::vector<float>& direct, const std::vector<float>& diffuse)
+    /// New target gains for input `i`; the audio thread ramps to them over
+    /// `ramp_ms`, or over the renderer's ramp time when `ramp_ms` is negative.
+    void set_targets(size_t i, const std::vector<float>& direct, const std::vector<float>& diffuse, double ramp_ms = -1.0)
     {
         if (i >= m_objects.size()) {
             return;
@@ -159,6 +160,7 @@ public:
         std::lock_guard<std::mutex> lock(m_mutex);
         copy_gains(direct, m_objects[i]->target_direct);
         copy_gains(diffuse, m_objects[i]->target_diffuse);
+        m_objects[i]->target_ramp_ms = ramp_ms;
         m_objects[i]->pending.store(true, std::memory_order_release);
         m_any_pending.store(true, std::memory_order_release);
     }
@@ -277,6 +279,7 @@ private:
         // written by the main thread under the mutex
         std::vector<float> target_direct;
         std::vector<float> target_diffuse;
+        double target_ramp_ms{ -1.0 };    // negative: use the renderer's ramp
         std::atomic<bool> pending{ false };
 
         // audio-thread state
@@ -304,13 +307,14 @@ private:
         if (!m_mutex.try_lock()) {
             return;    // the main thread is writing; try again next vector
         }
-        const long ramp_samples =
-            std::max(1L, static_cast<long>(std::lround(m_ramp_ms.load() * m_samplerate / 1000.0)));
+        const double default_ramp_ms = m_ramp_ms.load();
         for (auto& op : m_objects) {
             object_gains& o = *op;
             if (!o.pending.load(std::memory_order_acquire)) {
                 continue;
             }
+            const double ramp_ms = o.target_ramp_ms >= 0.0 ? o.target_ramp_ms : default_ramp_ms;
+            const long ramp_samples = std::max(1L, static_cast<long>(std::lround(ramp_ms * m_samplerate / 1000.0)));
             o.active_direct = o.target_direct;
             o.active_diffuse = o.target_diffuse;
             o.pending.store(false, std::memory_order_release);

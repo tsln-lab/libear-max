@@ -248,6 +248,26 @@ SCENARIO("mc.ear.encode~ encodes objects into an ambisonic scene") {
             }
         }
 
+        WHEN("an object is given its own ramp time") {
+            obj.setvalue(atoms{ 1, symbol("ramp"), 100.0 });    // 4800 samples at 48 kHz
+            obj.setvalue(atoms{ 1, symbol("azimuth"), 90.0 });    // Y goes from 0 to 1
+            mc_audio_io io(1, 4, k_block);
+            std::fill(io.ins[0].begin(), io.ins[0].end(), 1.0);
+            obj(io.input(), io.output());
+            THEN("the encoding gains interpolate over that time instead of the ramp attribute") {
+                REQUIRE(io.outs[k_y][k_block - 1] == Approx(64.0 / 4800.0).margin(2.0 / 4800.0));
+                REQUIRE(io.outs[k_w][k_block - 1] == Approx(1.0));
+            }
+            AND_WHEN("a negative ramp returns the object to the attribute") {
+                obj.setvalue(atoms{ 1, symbol("ramp"), -1.0 });
+                obj.setvalue(atoms{ 1, symbol("azimuth"), -90.0 });
+                obj(io.input(), io.output());
+                THEN("the change is immediate again") {
+                    REQUIRE(io.outs[k_y][k_block - 1] == Approx(-1.0));
+                }
+            }
+        }
+
         WHEN("more input channels than objects are connected") {
             REQUIRE(obj.mc_input_changed(0, 20) == 0);
             mc_audio_io io(20, 4, k_block);

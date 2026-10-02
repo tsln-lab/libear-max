@@ -1,11 +1,16 @@
 {
   "name": "libear-max",
   "version-string": "0.1.0",
-  "description": "Boost header dependencies required by libear (used on Windows CI; macOS uses Homebrew, Linux uses apt).",
+  "description": "Boost header dependencies required by libear and libadm (used on Windows CI; macOS uses Homebrew, Linux uses apt).",
   "dependencies": [
     "boost-algorithm",
+    "boost-functional",
+    "boost-integer",
+    "boost-iterator",
     "boost-math",
     "boost-optional",
+    "boost-range",
+    "boost-rational",
     "boost-smart-ptr",
     "boost-variant"
   ]

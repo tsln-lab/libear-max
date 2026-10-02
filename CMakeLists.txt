@@ -3,6 +3,8 @@
 # Package layout follows the Min-DevKit conventions:
 #   source/min-api        Min C++ API for Max (submodule, brings max-sdk-base)
 #   source/libear         EBU libear (submodule)
+#   source/libadm         EBU libadm, ADM metadata (submodule)
+#   source/libbw64        EBU libbw64, BW64 audio files (submodule)
 #   source/projects/*     one folder per external
 #   externals/            build output (git-ignored)
 #   tests/                unit test binaries (git-ignored)
@@ -69,6 +71,21 @@ if (APPLE)
 endif ()
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/source/libear EXCLUDE_FROM_ALL)
+
+#############################################################
+# libadm and libbw64 (ADM metadata and BW64 files, for ear.adm)
+#############################################################
+
+set(ADM_UNIT_TESTS OFF CACHE BOOL "" FORCE)
+set(ADM_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(ADM_PACKAGE_AND_INSTALL OFF CACHE BOOL "" FORCE)
+set(ADM_HIDE_INTERNAL_SYMBOLS ON CACHE BOOL "" FORCE)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/source/libadm EXCLUDE_FROM_ALL)
+
+set(BW64_UNIT_TESTS OFF CACHE BOOL "" FORCE)
+set(BW64_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(BW64_PACKAGE_AND_INSTALL OFF CACHE BOOL "" FORCE)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/source/libbw64 EXCLUDE_FROM_ALL)
 
 #############################################################
 # Externals: one project per folder in source/projects

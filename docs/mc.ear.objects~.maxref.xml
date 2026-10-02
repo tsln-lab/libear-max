@@ -70,7 +70,7 @@
 		</method>
 		<method name='setvalue'>
 			<digest>Set a parameter of one object: 'setvalue N parameter values...' (N is 1-based; 0 sets all objects)</digest>
-			<description>Set a parameter of one object: 'setvalue N parameter values...' (N is 1-based; 0 sets all objects). Parameters: azimuth elevation distance x y z cartesian width height depth gain diffuse channellock channellock_distance divergence divergence_range screenref screenedgelock_h screenedgelock_v position zone.</description>
+			<description>Set a parameter of one object: 'setvalue N parameter values...' (N is 1-based; 0 sets all objects). Parameters: azimuth elevation distance x y z cartesian width height depth gain diffuse channellock channellock_distance divergence divergence_range screenref screenedgelock_h screenedgelock_v position zone, and ramp (the interpolation time in milliseconds of the next changes of that object; negative returns to the ramp attribute).</description>
 		</method>
 	</methodlist>
 

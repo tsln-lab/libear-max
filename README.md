@@ -17,6 +17,8 @@ and unit tests.
 | `mc.ear.direct~` | Multichannel bed renderer: every input channel is a DirectSpeakers channel (by label or position), rendered onto the layout. `inputlayout 0+5+0` labels the input after a BS.2051 layout. |
 | `mc.ear.hoa~` | Multichannel ambisonic (ADM *HOA*) decoder: the input carries the ambisonic components in ACN order, the output one channel per loudspeaker, decoded with the EAR's AllRAD design for the layout. |
 | `mc.ear.encode~` | Multichannel ambisonic encoder, the counterpart of `mc.ear.objects~`: every input channel is an object positioned with the same messages, the output carries the summed ambisonic components in ACN order. |
+| `ear.adm` | Reads and writes ADM files (BW64 with ADM metadata): resolves a file's rendering items like the EAR, plays its object metadata to the renderers with the reference's interpolation rules, and captures object messages to write them with recorded audio as a new ADM file. |
+| `mc.ear.select~` | Picks channels of a multichannel signal by number, to route the tracks of a file (as `ear.adm` reports them) to the renderer that handles them. |
 
 All objects take a BS.2051 layout name as argument (`0+2+0`, `0+5+0`, `2+5+0`,
 `4+5+0`, `4+5+1`, `3+7+0`, `4+9+0`, `9+10+3`, `0+7+0`, `4+7+0`); the default is
@@ -70,7 +72,11 @@ addressed per input channel in the style of Max's mc objects:
   to all inputs; a list sets the position of all inputs.
 
 `mc.ear.objects~` accepts every `ear.objects` parameter listed above plus
-`position` and `zone`, and the `ramp` and `decorrelate` attributes.
+`position` and `zone`, and the `ramp` and `decorrelate` attributes. `ramp`
+is also a per-object parameter (`setvalue 3 ramp 250`): it sets the
+interpolation time of the next changes of that object, until a negative
+value returns it to the attribute; `ear.adm` uses it to reproduce the
+interpolation of each ADM block.
 `mc.ear.direct~` accepts `speakerlabel`, `position`, `azimuth`, `elevation`,
 `distance`, `bounds`, `lfe` and `packformat`, plus `inputlayout <name>`, which
 labels the input channels after a BS.2051 layout (LFE channels included), so
@@ -120,6 +126,78 @@ scenes and objects stay time-aligned. Set `@align 0` for zero latency when no
 decorrelating renderer is mixed in, or set `@decorrelate 0` on the object
 renderer instead.
 
+### ear.adm and mc.ear.select~: ADM files
+
+`ear.adm` reads and writes ADM files, the BW64 (`.wav`) files with ADM
+metadata that the EAR renders. It handles the metadata only; the audio goes
+through Max's own file objects, which keeps everything sample-accurate and
+lets you use any player or recorder.
+
+**Reading.** `read file.wav` loads the file's ADM (libbw64 and libadm) and
+resolves the rendering items the way the EAR's `select_items` does: it follows
+the selected `audioProgramme` (`programme n` picks another one) through the
+contents and objects to the channel formats, and maps every item to the file
+track that carries it through the `chna` chunk. The info outlet (the fourth)
+reports the file (`file path samplerate channels frames`), the programmes, one
+line per item (`object n track name blocks`, `directspeakers n track name
+labels...`, `scene n name order normalization tracks...`) and warnings, and
+the three renderer outlets send `tracks ...` lists, the static bed metadata
+(`setvalue n speakerlabel/position/bounds/lfe/packformat` for
+`mc.ear.direct~`) and the scene parameters (`order`, `normalization`,
+`tracks` for `mc.ear.hoa~`). Objects metadata is timed: `start` runs a
+transport on Max's scheduler that emits every `audioBlockFormat` at its start
+time as `mc.ear.objects~` messages, `stop` stops it, `seek ms` moves it, and
+`time ms` emits the blocks active at a position without running. Each block
+is preceded by `setvalue n ramp ms` with the EAR's interpolation length for
+that block (BS.2127 section 7.2: the block duration, the `interpolationLength`
+when `jumpPosition` is set, or 0 for a jump; no interpolation when the block
+does not follow the previous one directly), so the renderer produces the same
+gain ramps as the reference. The audio is played by one `mc.sfplay~` on the
+file (started together with the transport), and `mc.ear.select~` routes the
+tracks to each renderer:
+
+```
+[read file.wav( [start(                 [mc.sfplay~ 12]
+|                                        |         |         |
+[ear.adm]                      [mc.ear.select~] [mc.ear.select~] [mc.ear.select~]
+|  |  |                           |                |                |
+|  |  +-- hoa messages -----------|----------------|----------------+
+|  +----- direct messages --------|----------------+                |
++-------- objects messages -------+                |                |
+                                  |                |                |
+                         [mc.ear.objects~ 4+5+0] [mc.ear.direct~ 4+5+0] [mc.ear.hoa~ 4+5+0]
+```
+
+The `tracks` message from each renderer outlet goes to the `mc.ear.select~`
+in front of that renderer as well (the help patcher shows the connections),
+so the selection follows the file.
+
+**Writing.** `record` starts capturing the object messages sent to `ear.adm`:
+the same `setvalue`, `applyvalues`, parameter and list messages
+`mc.ear.objects~` takes (send them to both objects), timestamped on Max's
+scheduler from the moment of `record`; `setvalue n ramp ms` sets the
+interpolation written for the following changes of that object (the `ramp`
+attribute is the default). `stop` ends the capture. Record the object audio
+at the same time with `mc.sfrecord~` (one channel per object, in object
+order), then `write out.wav recorded.wav` copies the audio into a BW64 file
+with the captured timeline as ADM metadata: one `audioProgramme` and
+`audioContent` (`@programmename`), and per object an `audioObject` named with
+`name n symbol`, its pack, channel, stream and track formats, a track UID
+and a `chna` entry, with one `audioBlockFormat` per captured change
+(`jumpPosition` with the ramp as `interpolationLength`). `writexml out.xml`
+writes the metadata alone, and `clear` discards the capture. `@chans` sets
+the number of objects captured.
+
+Limitations of this first version: zone exclusion is not read or written
+(libadm does not support it); muted objects, silent tracks, tracks missing
+from the `chna` chunk, cartesian DirectSpeakers positions and unsupported
+types are skipped with a warning on the info outlet; `audioObject`
+importance and complementary object groups are not interpreted (every
+object is rendered); nested objects use the innermost start and duration;
+when a file has several HOA scenes only the first is sent to the hoa
+outlet; and the file must be one Max can open with `mc.sfplay~` (RIFF,
+under 4 GB).
+
 ### ear.direct
 
 Attributes `layout`, `azimuth`, `elevation`, `distance`, `lfe` (marks the
@@ -164,7 +242,8 @@ positions; custom layouts render in polar mode only.
 ## Building
 
 Requirements: CMake 3.19+, a C++17 compiler, git, and the Boost headers
-(`optional`, `variant`, `math`, `algorithm`, `smart_ptr`) needed by libear.
+needed by libear (`optional`, `variant`, `math`, `algorithm`, `smart_ptr`)
+and libadm (`range`, `rational`, `iterator`, `functional`, `integer`).
 
 ```sh
 git clone --recursive https://github.com/tsln-lab/libear-max.git
@@ -323,6 +402,11 @@ source/projects/mc.ear.objects_tilde/  mc.ear.objects~ (multichannel)
 source/projects/mc.ear.direct_tilde/   mc.ear.direct~ (multichannel)
 source/projects/mc.ear.hoa_tilde/      mc.ear.hoa~ (multichannel ambisonic decoder)
 source/projects/mc.ear.encode_tilde/   mc.ear.encode~ (multichannel ambisonic encoder)
+source/projects/mc.ear.select_tilde/   mc.ear.select~ (channel selection for routing file tracks)
+source/projects/ear.adm/               ear.adm (ADM file reading and writing; test_data/ holds the EAR-generated fixture)
+source/projects/shared/ear_max_adm.h   rendering item selection and block timing like the EAR, ADM document building
+source/libadm/                         libadm, the EBU ADM library (submodule)
+source/libbw64/                        libbw64, the EBU BW64 file library (submodule, header-only)
 source/projects/shared/ear_max_hoa.h   spherical harmonics in the EAR's conventions
 source/projects/shared/ear_max_dsp.h   bus_renderer: the shared N-in / L-out gain matrix with ramps and decorrelation
 help/                           help patchers
@@ -350,7 +434,8 @@ page is not well-formed XML.
 ## Design notes
 
 - libear is compiled as a static library and linked into each external, so
-  the externals have no runtime dependencies beyond Max.
+  the externals have no runtime dependencies beyond Max. The same goes for
+  libadm (static) and libbw64 (header-only) in `ear.adm`.
 - Gain calculation happens on Max's main thread (attribute setters and
   messages are deferred there by Min). The signal objects share one DSP core
   (`bus_renderer`) that mixes N inputs onto L loudspeakers; new gain vectors
@@ -372,7 +457,11 @@ page is not well-formed XML.
 - Custom reproduction screens (currently the default screen is used for
   `screenref` and screen edge lock).
 - `ear.hoa`: control-rate HOA decoding matrix, and HOA `screenRef` once libear implements it.
-- Reading and writing ADM/BW64 files (libadm, libbw64) in a later phase.
+- ADM files, next phases: `mc.ear.play~` and `mc.ear.record~`, signal
+  objects that play and record the audio of a BW64 file themselves
+  (sample-accurate metadata, files over 4 GB and BW64-only headers),
+  DirectSpeakers and HOA capture for writing, and zone exclusion once libadm
+  supports it.
 
 ## License
 
