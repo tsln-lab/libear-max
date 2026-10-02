@@ -201,6 +201,26 @@ SCENARIO("mc.ear.hoa~ decodes an ambisonic scene to a multichannel loudspeaker s
             }
         }
 
+        WHEN("the order is lowered while the audio runs") {
+            obj.align = false;
+            obj.order = 2;
+            obj.dspsetup(atoms{ 48000.0, k_block });    // nine components allocated
+            mc_audio_io io(9, k_channels_050, k_block);
+            for (auto& in : io.ins) std::fill(in.begin(), in.end(), 1.0);
+            obj(io.input(), io.output());
+            const double second_order = io.outs[k_m000][k_block - 1];
+            obj.order = 1;
+            obj(io.input(), io.output());
+            THEN("the dropped components are silenced instead of keeping their old gains") {
+                double expected = 0.0;
+                for (size_t i = 0; i < 4; ++i) {
+                    expected += obj.gains(i)[k_m000];
+                }
+                REQUIRE(io.outs[k_m000][k_block - 1] == Approx(expected));
+                REQUIRE(io.outs[k_m000][k_block - 1] != Approx(second_order));
+            }
+        }
+
         WHEN("more input channels than components are connected") {
             REQUIRE(obj.mc_input_changed(0, 9) == 0);
             obj.align = false;

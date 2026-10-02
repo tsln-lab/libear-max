@@ -266,9 +266,10 @@ private:
         m_matrix = std::move(matrix);
         if (initialized()) {
             // components beyond the bus capacity (a higher order than at the
-            // last dspsetup) are picked up when the audio is restarted
-            for (size_t i = 0; i < m_matrix.size() && i < m_bus.capacity(); ++i) {
-                m_bus.set_targets(i, m_matrix[i], m_silence);
+            // last dspsetup) are picked up when the audio is restarted; bus
+            // inputs beyond the new component count (a lower order) are silenced
+            for (size_t i = 0; i < m_bus.capacity(); ++i) {
+                m_bus.set_targets(i, i < m_matrix.size() ? m_matrix[i] : m_silence, m_silence);
             }
         }
     }
