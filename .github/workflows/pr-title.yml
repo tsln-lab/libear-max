@@ -1,0 +1,37 @@
+name: PR title
+
+# Pull request titles become the commit messages on main when a pull request is
+# squash-merged, and release-please reads those (with a merge commit it reads
+# the branch's individual commits), so they follow the conventional commits
+# format:
+#   feat: add mc.ear.hoa~          -> minor release, listed under Features
+#   fix: clamp zone bounds         -> patch release, listed under Bug Fixes
+#   feat!: rename the zone message -> breaking change
+#   ci:, docs:, chore:, refactor:, test:, build:, perf: are accepted too
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  title:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            perf
+            docs
+            build
+            ci
+            chore
+            refactor
+            test
+          requireScope: false
