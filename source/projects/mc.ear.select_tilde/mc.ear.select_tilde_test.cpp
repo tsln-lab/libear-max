@@ -2,6 +2,8 @@
 /// @brief   Unit tests for mc.ear.select~ (run against the Min mock kernel).
 /// @license Use of this source code is governed by the MIT License found in the License.md file.
 
+#include <limits>
+
 #include "../shared/ear_max_test.h"
 #include "mc.ear.select_tilde.h"
 
@@ -92,8 +94,23 @@ SCENARIO("mc.ear.select~ routes the selected channels of a multichannel signal")
             obj.tracks(atoms{ 0 });
             obj.tracks(atoms{ symbol("one") });
             obj.tracks(atoms{});
-            THEN("the previous selection stays") {
+            obj.tracks(atoms{ std::numeric_limits<double>::quiet_NaN() });
+            obj.tracks(atoms{ std::numeric_limits<double>::infinity() });
+            obj.tracks(atoms{ 1e300 });
+            obj.tracks(atoms{ 1025 });
+            THEN("the previous selection stays, in the audio thread's copy too") {
                 REQUIRE(obj.selected() == std::vector<long>{ 6, 7 });
+                mc_audio_io io(8, 2, k_block);
+                obj(io.input(), io.output());
+                REQUIRE(io.outs[0][k_block - 1] == Approx(7.0));
+                REQUIRE(io.outs[1][k_block - 1] == Approx(8.0));
+            }
+        }
+
+        WHEN("a float channel number is sent") {
+            obj.tracks(atoms{ 3.0, 4.7 });
+            THEN("it is truncated like Max does") {
+                REQUIRE(obj.selected() == std::vector<long>{ 2, 3 });
             }
         }
     }

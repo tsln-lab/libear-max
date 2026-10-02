@@ -11,7 +11,8 @@
 
 #include <algorithm>
 #include <atomic>
-#include <memory>
+#include <cmath>
+#include <mutex>
 
 using namespace earmax;
 
@@ -30,14 +31,30 @@ public:
     MIN_FLAGS{ documentation_flags::do_not_generate };
 
 private:
-    using track_list = std::vector<long>;    // 0-based input channels, one per output channel
-    // the message thread publishes a new immutable list; the audio thread
-    // takes one snapshot per vector, so a change never tears a block
-    std::shared_ptr<const track_list> m_tracks{ std::make_shared<const track_list>(track_list{ 0 }) };
+    static constexpr size_t k_max_tracks = 1024;    // Max's multichannel limit
 
-    std::shared_ptr<const track_list> snapshot() const
+    // The message thread owns m_tracks (0-based input channels, one per
+    // output channel) under m_mutex. The audio thread keeps its own copy,
+    // allocated once at the full capacity: when a change is flagged it
+    // try_locks the mutex and copies the selection (never blocking and
+    // never allocating or freeing on the audio thread), otherwise it keeps
+    // routing with the previous copy until the next vector.
+    mutable std::mutex m_mutex;
+    std::vector<long> m_tracks{ 0 };
+    std::vector<long> m_audio_tracks;
+    std::atomic<bool> m_changed{ false };
+
+    /// the audio thread's copy of the selection, refreshed when it changed
+    const std::vector<long>& audio_tracks()
     {
-        return std::atomic_load_explicit(&m_tracks, std::memory_order_acquire);
+        if (m_changed.load(std::memory_order_acquire) && m_mutex.try_lock()) {
+            const size_t n = std::min(m_tracks.size(), m_audio_tracks.capacity());
+            m_audio_tracks.resize(n);    // within the reserved capacity: no allocation
+            std::copy(m_tracks.begin(), m_tracks.begin() + static_cast<long>(n), m_audio_tracks.begin());
+            m_changed.store(false, std::memory_order_release);
+            m_mutex.unlock();
+        }
+        return m_audio_tracks;
     }
 
 public:
@@ -46,6 +63,8 @@ public:
 
     mc_ear_select_tilde(const atoms& args = {})
     {
+        m_audio_tracks.reserve(k_max_tracks);
+        m_audio_tracks = m_tracks;
         set_tracks(args);    // the default selection (channel 1) stays when there are no arguments
     }
 
@@ -53,7 +72,7 @@ public:
         "Select input channels by number (1-based): 'tracks 7 8 9 10'. Takes effect on the output channel count when the audio is restarted.",
         MIN_FUNCTION {
             if (!set_tracks(args)) {
-                cerr << "tracks needs channel numbers (1-based)" << endl;
+                cerr << "tracks needs channel numbers (1 to " << k_max_tracks << ")" << endl;
             }
             return {};
         } };
@@ -67,7 +86,8 @@ public:
 
     long mc_output_channels(long) const
     {
-        return static_cast<long>(std::max<size_t>(1, snapshot()->size()));
+        std::lock_guard<std::mutex> lock(m_mutex);
+        return static_cast<long>(std::max<size_t>(1, m_tracks.size()));
     }
 
     long mc_input_changed(long, long)
@@ -77,12 +97,12 @@ public:
 
     void operator()(audio_bundle input, audio_bundle output)
     {
-        const std::shared_ptr<const track_list> tracks = snapshot();
+        const std::vector<long>& tracks = audio_tracks();
         const long frames = input.frame_count();
         const long outs = output.channel_count();
         for (long ch = 0; ch < outs; ++ch) {
             double* out = output.samples(ch);
-            const long source = ch < static_cast<long>(tracks->size()) ? (*tracks)[static_cast<size_t>(ch)] : -1;
+            const long source = ch < static_cast<long>(tracks.size()) ? tracks[static_cast<size_t>(ch)] : -1;
             if (source >= 0 && source < input.channel_count()) {
                 const double* in = input.samples(source);
                 std::copy(in, in + frames, out);
@@ -95,7 +115,8 @@ public:
 
     std::vector<long> selected() const
     {
-        return *snapshot();
+        std::lock_guard<std::mutex> lock(m_mutex);
+        return m_tracks;
     }
 
 private:
@@ -106,17 +127,22 @@ private:
             if (!atom_is_numeric(a)) {
                 return false;
             }
-            const long n = static_cast<long>(static_cast<double>(a));
-            if (n < 1) {
+            // validated as a double first: a NaN, an infinity or a huge value
+            // must not reach the conversion to long
+            const double value = static_cast<double>(a);
+            if (!std::isfinite(value) || value < 1.0 || value > static_cast<double>(k_max_tracks)) {
                 return false;
             }
-            tracks.push_back(n - 1);
+            tracks.push_back(static_cast<long>(value) - 1);
         }
         if (tracks.empty()) {
             return false;
         }
-        std::atomic_store_explicit(&m_tracks, std::shared_ptr<const track_list>(std::make_shared<const track_list>(std::move(tracks))),
-                                   std::memory_order_release);
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_tracks.swap(tracks);    // the old list is freed here, on the message thread
+        }
+        m_changed.store(true, std::memory_order_release);
         return true;
     }
 };
