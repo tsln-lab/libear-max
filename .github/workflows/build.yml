@@ -147,7 +147,16 @@ jobs:
       - name: Unit tests
         run: ctest --test-dir build --output-on-failure
       - name: Reference pages are well-formed XML
-        run: python3 tools/check_maxref.py tests/*.maxref.xml
+        # Every unit test generates its object's page into tests/, so exactly
+        # one page per external must exist before they are validated.
+        run: |
+          shopt -s nullglob
+          files=(tests/*.maxref.xml)
+          if [ "${#files[@]}" -ne 5 ]; then
+            echo "expected 5 reference pages in tests/, found ${#files[@]}: ${files[*]}"
+            exit 1
+          fi
+          python3 tools/check_maxref.py "${files[@]}"
 
   release:
     name: Publish GitHub release
