@@ -33,8 +33,12 @@ public:
     /// Allocate state for `layout` with up to `capacity` inputs at the given
     /// block size and sample rate. Previous gain state is discarded; callers
     /// re-publish their current gains with set_gains_now() afterwards.
+    /// `with_decorrelation` allocates the decorrelation filters and the
+    /// compensation delay; `with_delay` allocates the compensation delay
+    /// alone, for renderers without a diffuse path that must stay aligned
+    /// with a decorrelating one (see set_delay_compensation()).
     void configure(const ear::Layout& layout, size_t capacity, size_t block_size, double samplerate,
-                   bool with_decorrelation = true)
+                   bool with_decorrelation = true, bool with_delay = false)
     {
         m_outputs = layout.channels().size();
         m_capacity = std::max<size_t>(1, capacity);
@@ -62,9 +66,11 @@ public:
         m_filters.clear();
         m_context.reset();
         m_delay.reset();
-        if (with_decorrelation && block_size > 0) {
+        if ((with_decorrelation || with_delay) && block_size > 0) {
             m_delay = std::make_unique<ear::dsp::DelayBuffer>(
                 m_outputs, static_cast<size_t>(ear::decorrelatorCompensationDelay()));
+        }
+        if (with_decorrelation && block_size > 0) {
             m_context = std::make_unique<ear::dsp::block_convolver::Context>(block_size, ear::get_fft_kiss<float>());
             const auto filters = ear::designDecorrelators<float>(layout);
             for (size_t ch = 0; ch < m_outputs; ++ch) {
@@ -103,13 +109,27 @@ public:
 
     bool decorrelating() const
     {
-        return m_decorrelate.load() && m_delay != nullptr;
+        return m_decorrelate.load() && !m_convolvers.empty();
     }
 
-    /// latency in samples introduced by the decorrelation path
+    /// Delay the output by the decorrelator compensation delay without
+    /// decorrelating anything, so that this renderer stays time-aligned with
+    /// a decorrelating one (the EAR reference aligns all item types this way).
+    /// Needs configure() with `with_delay`.
+    void set_delay_compensation(bool on)
+    {
+        m_delay_compensation.store(on);
+    }
+
+    bool delay_compensating() const
+    {
+        return m_delay_compensation.load() && m_delay != nullptr;
+    }
+
+    /// latency in samples introduced by the decorrelation path or the delay compensation
     int latency() const
     {
-        return decorrelating() ? m_delay->get_delay() : 0;
+        return (decorrelating() || delay_compensating()) ? m_delay->get_delay() : 0;
     }
 
     /// New target gains for input `i`; the audio thread ramps to them.
@@ -202,22 +222,23 @@ public:
             }
         }
 
-        if (decorrelating()) {
+        const bool decorrelate = decorrelating();
+        const bool delay = decorrelate || delay_compensating();
+        if (m_delay) {
+            // keep the delay line running while it is bypassed, so that
+            // switching it back on does not replay audio from before the bypass
             m_delay->process(frames, m_direct_ptrs.data(), m_delayed_ptrs.data());
-            for (size_t ch = 0; ch < n_out; ++ch) {
-                m_convolvers[ch]->process(m_diffuse_bus[ch].data(), m_convolved[ch].data());
-                double* out = outs[ch];
-                for (size_t n = 0; n < frames; ++n) {
-                    out[n] = static_cast<double>(m_delayed[ch][n]) + static_cast<double>(m_convolved[ch][n]);
-                }
-            }
         }
-        else {
-            for (size_t ch = 0; ch < n_out; ++ch) {
-                double* out = outs[ch];
-                for (size_t n = 0; n < frames; ++n) {
-                    out[n] = static_cast<double>(m_direct_bus[ch][n]) + static_cast<double>(m_diffuse_bus[ch][n]);
-                }
+        for (size_t ch = 0; ch < n_out; ++ch) {
+            const std::vector<float>& direct = delay ? m_delayed[ch] : m_direct_bus[ch];
+            const std::vector<float>* diffuse = &m_diffuse_bus[ch];
+            if (decorrelate) {
+                m_convolvers[ch]->process(m_diffuse_bus[ch].data(), m_convolved[ch].data());
+                diffuse = &m_convolved[ch];
+            }
+            double* out = outs[ch];
+            for (size_t n = 0; n < frames; ++n) {
+                out[n] = static_cast<double>(direct[n]) + static_cast<double>((*diffuse)[n]);
             }
         }
 
@@ -294,6 +315,7 @@ private:
 
     std::atomic<double> m_ramp_ms{ 10.0 };
     std::atomic<bool> m_decorrelate{ true };
+    std::atomic<bool> m_delay_compensation{ false };
 
     std::mutex m_mutex;
     std::atomic<bool> m_any_pending{ false };

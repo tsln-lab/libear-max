@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Check that generated Max reference pages (*.maxref.xml) are well-formed XML.
 
-Min generates these from the description strings in the externals when they
-are first loaded; it does not escape '<' and '>', so the unit tests generate
-the pages into tests/ and CI runs this script on them.
+The unit tests generate them into docs/ from the description strings in the
+externals (source/projects/shared/ear_max_doc.h); CI runs this script on the
+committed pages.
 """
 import sys
 import xml.etree.ElementTree as ET

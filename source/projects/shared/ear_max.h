@@ -493,7 +493,7 @@ public:
     // ------------------------------------------------------------------
 
     attribute<symbol> layout{ this, "layout", k_default_layout,
-        description{ "ITU-R BS.2051 loudspeaker layout name (e.g. 0+2+0, 0+5+0, 2+5+0, 4+5+0, 4+9+0, 9+10+3). "
+        description{ "ITU-R BS.2051 loudspeaker layout name, such as 0+2+0, 0+5+0, 2+5+0, 4+5+0, 4+9+0, 9+10+3. "
                      "Send 'layouts' to list all names. Signal objects fix the layout at creation time." },
         setter{ MIN_FUNCTION {
             const std::string name = args[0];
