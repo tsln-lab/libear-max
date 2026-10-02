@@ -18,6 +18,7 @@ set(SOURCE_FILES
     ../shared/ear_max_adm.h
     ../shared/ear_max_adm_capture.h
     ../shared/ear_max_adm_player.h
+    ../shared/ear_max_direct.h
 )
 
 add_library(${PROJECT_NAME} MODULE ${SOURCE_FILES})

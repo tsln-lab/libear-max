@@ -13,7 +13,7 @@
 			100.0,
 			100.0,
 			820.0,
-			560.0
+			620.0
 		],
 		"bglocked": 0,
 		"openinpresentation": 0,
@@ -62,7 +62,7 @@
 						780.0,
 						20.0
 					],
-					"text": "ear.adm \u2014 read and write ADM (BW64) files alongside the renderers"
+					"text": "ear.adm — read and write ADM (BW64) files alongside the renderers"
 				}
 			},
 			{
@@ -449,9 +449,9 @@
 						15.0,
 						340.0,
 						780.0,
-						47.0
+						61.0
 					],
-					"text": "Writing: 'record' captures the object messages sent to ear.adm (the same setvalue / applyvalues / parameter messages the renderers take; send them to both), timestamped from the moment of 'record'; 'stop' ends the capture. Record the object audio with mc.sfrecord~ at the same time, then 'write out.wav in.wav' copies that audio into a BW64 file with the captured timeline as ADM metadata (one Objects audioObject per track). 'writexml out.xml' writes the metadata alone."
+					"text": "Writing: 'record' captures the object messages sent to ear.adm (the same setvalue / applyvalues / parameter messages as mc.ear.objects~ takes), timestamped from the scheduler; 'stop' ends the capture. 'direct ...' and 'hoa ...' take the static metadata of a DirectSpeakers bed and an HOA scene in the formats of mc.ear.direct~ and mc.ear.hoa~ (@directchans channels after the objects, then (@hoaorder+1)^2 HOA components). 'write out.wav recorded.wav' copies the audio recorded by mc.sfrecord~ (the tracks in that order) into a BW64 file with the ADM metadata."
 				}
 			},
 			{
@@ -460,7 +460,7 @@
 					"maxclass": "message",
 					"patching_rect": [
 						15.0,
-						400.0,
+						415.0,
 						45.0,
 						22.0
 					],
@@ -478,7 +478,7 @@
 					"maxclass": "message",
 					"patching_rect": [
 						70.0,
-						400.0,
+						415.0,
 						35.0,
 						22.0
 					],
@@ -496,7 +496,7 @@
 					"maxclass": "message",
 					"patching_rect": [
 						115.0,
-						400.0,
+						415.0,
 						140.0,
 						22.0
 					],
@@ -514,7 +514,7 @@
 					"maxclass": "message",
 					"patching_rect": [
 						265.0,
-						400.0,
+						415.0,
 						130.0,
 						22.0
 					],
@@ -532,7 +532,7 @@
 					"maxclass": "message",
 					"patching_rect": [
 						405.0,
-						400.0,
+						415.0,
 						110.0,
 						22.0
 					],
@@ -550,7 +550,7 @@
 					"maxclass": "message",
 					"patching_rect": [
 						525.0,
-						400.0,
+						415.0,
 						195.0,
 						22.0
 					],
@@ -568,7 +568,7 @@
 					"maxclass": "message",
 					"patching_rect": [
 						15.0,
-						430.0,
+						445.0,
 						100.0,
 						22.0
 					],
@@ -586,7 +586,7 @@
 					"maxclass": "message",
 					"patching_rect": [
 						125.0,
-						430.0,
+						445.0,
 						40.0,
 						22.0
 					],
@@ -604,11 +604,11 @@
 					"maxclass": "newobj",
 					"patching_rect": [
 						15.0,
-						470.0,
-						190.0,
+						515.0,
+						290.0,
 						22.0
 					],
-					"text": "ear.adm @chans 2 @ramp 10",
+					"text": "ear.adm @chans 2 @directchans 6 @hoaorder 1",
 					"numinlets": 1,
 					"numoutlets": 4,
 					"outlettype": [
@@ -624,12 +624,12 @@
 					"id": "obj-34",
 					"maxclass": "comment",
 					"patching_rect": [
-						215.0,
-						470.0,
-						560.0,
-						33.0
+						315.0,
+						515.0,
+						480.0,
+						47.0
 					],
-					"text": "@chans: objects captured (one per track of the recorded audio); @ramp: default interpolation time written for changes; @programmename: the audioProgramme name"
+					"text": "@chans: objects captured (the first tracks of the recorded audio); @directchans: bed channels after them; @hoaorder: HOA order of the scene after the bed (-1: none); @ramp: default interpolation written for object changes"
 				}
 			},
 			{
@@ -638,7 +638,7 @@
 					"maxclass": "newobj",
 					"patching_rect": [
 						15.0,
-						510.0,
+						555.0,
 						40.0,
 						22.0
 					],
@@ -646,6 +646,78 @@
 					"numinlets": 1,
 					"numoutlets": 0,
 					"outlettype": []
+				}
+			},
+			{
+				"box": {
+					"id": "obj-36",
+					"maxclass": "message",
+					"text": "direct inputlayout 0+5+0",
+					"patching_rect": [
+						175.0,
+						445.0,
+						160.0,
+						22.0
+					],
+					"numinlets": 2,
+					"numoutlets": 1,
+					"outlettype": [
+						""
+					]
+				}
+			},
+			{
+				"box": {
+					"id": "obj-37",
+					"maxclass": "message",
+					"text": "direct setvalue 4 lfe 1",
+					"patching_rect": [
+						345.0,
+						445.0,
+						140.0,
+						22.0
+					],
+					"numinlets": 2,
+					"numoutlets": 1,
+					"outlettype": [
+						""
+					]
+				}
+			},
+			{
+				"box": {
+					"id": "obj-38",
+					"maxclass": "message",
+					"text": "hoa order 1",
+					"patching_rect": [
+						495.0,
+						445.0,
+						80.0,
+						22.0
+					],
+					"numinlets": 2,
+					"numoutlets": 1,
+					"outlettype": [
+						""
+					]
+				}
+			},
+			{
+				"box": {
+					"id": "obj-39",
+					"maxclass": "message",
+					"text": "hoa normalization N3D",
+					"patching_rect": [
+						585.0,
+						445.0,
+						145.0,
+						22.0
+					],
+					"numinlets": 2,
+					"numoutlets": 1,
+					"outlettype": [
+						""
+					]
 				}
 			}
 		],
@@ -1043,6 +1115,54 @@
 					"source": [
 						"obj-33",
 						3
+					]
+				}
+			},
+			{
+				"patchline": {
+					"destination": [
+						"obj-33",
+						0
+					],
+					"source": [
+						"obj-36",
+						0
+					]
+				}
+			},
+			{
+				"patchline": {
+					"destination": [
+						"obj-33",
+						0
+					],
+					"source": [
+						"obj-37",
+						0
+					]
+				}
+			},
+			{
+				"patchline": {
+					"destination": [
+						"obj-33",
+						0
+					],
+					"source": [
+						"obj-38",
+						0
+					]
+				}
+			},
+			{
+				"patchline": {
+					"destination": [
+						"obj-33",
+						0
+					],
+					"source": [
+						"obj-39",
+						0
 					]
 				}
 			}

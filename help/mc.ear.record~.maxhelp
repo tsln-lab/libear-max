@@ -13,7 +13,7 @@
 			100.0,
 			100.0,
 			820.0,
-			420.0
+			470.0
 		],
 		"bglocked": 0,
 		"openinpresentation": 0,
@@ -73,12 +73,12 @@
 				"box": {
 					"id": "obj-2",
 					"maxclass": "comment",
-					"text": "The multichannel input is the objects' audio, one channel per object, as fed to mc.ear.objects~. While it records, the object metadata is sent to the object in the same format as to mc.ear.objects~ ('setvalue N parameter', 'applyvalues', lists, or a parameter as a message for all objects), and every change is written as an audioBlockFormat timed by the audio itself, with the ramp in force as its interpolation: audio and metadata cannot drift apart. 'open path' names the file, 'start' (or 1) records from the objects' current parameters, 'stop' (or 0) finishes the file and reports 'written path objects length-ms' on the outlet. @chans sets the channels written (extra input channels are ignored, missing ones are silent), @bitdepth the sample format, @ramp the default interpolation. Files over 4 GB are written as RF64.",
+					"text": "The multichannel input carries the tracks in file order: the objects' audio (one channel per object, as fed to mc.ear.objects~), then a DirectSpeakers bed (@directchans channels) and an HOA scene ((@hoaorder+1)^2 components), combined with mc.combine~. While it records, the object metadata is sent to the object in the same format as to mc.ear.objects~ ('setvalue N parameter', 'applyvalues', lists, or a parameter as a message for all objects), and every change is written as an audioBlockFormat timed by the audio itself, with the ramp in force as its interpolation: audio and metadata cannot drift apart. The bed and scene metadata is static: 'direct ...' and 'hoa ...' in the formats of mc.ear.direct~ and mc.ear.hoa~. 'open path' names the file, 'start' (or 1) records, 'stop' (or 0) finishes the file and reports 'written path tracks length-ms'. Files over 4 GB are written as RF64.",
 					"patching_rect": [
 						15.0,
 						35.0,
 						780.0,
-						88.0
+						101.0
 					],
 					"numinlets": 1,
 					"numoutlets": 0,
@@ -92,7 +92,7 @@
 					"text": "open myfile.wav",
 					"patching_rect": [
 						15.0,
-						135.0,
+						150.0,
 						110.0,
 						22.0
 					],
@@ -110,7 +110,7 @@
 					"text": "start",
 					"patching_rect": [
 						135.0,
-						135.0,
+						150.0,
 						38.0,
 						22.0
 					],
@@ -128,7 +128,7 @@
 					"text": "stop",
 					"patching_rect": [
 						183.0,
-						135.0,
+						150.0,
 						35.0,
 						22.0
 					],
@@ -146,7 +146,7 @@
 					"text": "position",
 					"patching_rect": [
 						228.0,
-						135.0,
+						150.0,
 						60.0,
 						22.0
 					],
@@ -164,7 +164,7 @@
 					"text": "name 1 voice",
 					"patching_rect": [
 						298.0,
-						135.0,
+						150.0,
 						85.0,
 						22.0
 					],
@@ -182,7 +182,7 @@
 					"text": "setvalue 1 azimuth 30",
 					"patching_rect": [
 						393.0,
-						135.0,
+						150.0,
 						135.0,
 						22.0
 					],
@@ -200,7 +200,7 @@
 					"text": "setvalue 1 ramp 100",
 					"patching_rect": [
 						538.0,
-						135.0,
+						150.0,
 						125.0,
 						22.0
 					],
@@ -218,7 +218,7 @@
 					"text": "applyvalues gain 1 0.5",
 					"patching_rect": [
 						673.0,
-						135.0,
+						150.0,
 						135.0,
 						22.0
 					],
@@ -233,10 +233,10 @@
 				"box": {
 					"id": "obj-11",
 					"maxclass": "newobj",
-					"text": "mc.ear.encode~ 1",
+					"text": "mc.ear.encode~ 2",
 					"patching_rect": [
 						15.0,
-						175.0,
+						220.0,
 						110.0,
 						22.0
 					],
@@ -251,11 +251,11 @@
 				"box": {
 					"id": "obj-12",
 					"maxclass": "comment",
-					"text": "the objects' audio, one channel per object: here two sources through mc.ear.encode~ as a stand-in for any multichannel signal",
+					"text": "the tracks in file order: 2 objects, a 5.1 bed and 4 HOA components, combined with mc.combine~ into one multichannel signal",
 					"patching_rect": [
-						135.0,
-						175.0,
-						420.0,
+						345.0,
+						220.0,
+						450.0,
 						33.0
 					],
 					"numinlets": 1,
@@ -267,11 +267,11 @@
 				"box": {
 					"id": "obj-13",
 					"maxclass": "newobj",
-					"text": "mc.ear.record~ @chans 2",
+					"text": "mc.ear.record~ @chans 2 @directchans 6 @hoaorder 1",
 					"patching_rect": [
 						15.0,
-						220.0,
-						160.0,
+						295.0,
+						330.0,
 						22.0
 					],
 					"numinlets": 1,
@@ -287,10 +287,10 @@
 					"maxclass": "comment",
 					"text": "outlet: recording, written (path, objects, length in ms), failed, position",
 					"patching_rect": [
-						185.0,
-						220.0,
-						500.0,
-						20.0
+						355.0,
+						295.0,
+						440.0,
+						33.0
 					],
 					"numinlets": 1,
 					"numoutlets": 0,
@@ -304,7 +304,7 @@
 					"text": "print",
 					"patching_rect": [
 						15.0,
-						265.0,
+						340.0,
 						40.0,
 						22.0
 					],
@@ -320,9 +320,115 @@
 					"text": "The same messages can drive mc.ear.objects~ at the same time, so the mix is heard as it is recorded. Compared with ear.adm + mc.sfrecord~: one transport instead of two (the blocks are timed by the recorded frames, not by Max's scheduler), and files Max cannot write (RF64/BW64 over 4 GB). The file plays back with mc.ear.play~.",
 					"patching_rect": [
 						15.0,
-						310.0,
+						385.0,
 						780.0,
 						61.0
+					],
+					"numinlets": 1,
+					"numoutlets": 0,
+					"fontsize": 12.0
+				}
+			},
+			{
+				"box": {
+					"id": "obj-17",
+					"maxclass": "message",
+					"text": "direct inputlayout 0+5+0",
+					"patching_rect": [
+						15.0,
+						180.0,
+						160.0,
+						22.0
+					],
+					"numinlets": 2,
+					"numoutlets": 1,
+					"outlettype": [
+						""
+					]
+				}
+			},
+			{
+				"box": {
+					"id": "obj-18",
+					"maxclass": "message",
+					"text": "direct setvalue 4 lfe 1",
+					"patching_rect": [
+						185.0,
+						180.0,
+						140.0,
+						22.0
+					],
+					"numinlets": 2,
+					"numoutlets": 1,
+					"outlettype": [
+						""
+					]
+				}
+			},
+			{
+				"box": {
+					"id": "obj-19",
+					"maxclass": "message",
+					"text": "hoa order 1",
+					"patching_rect": [
+						335.0,
+						180.0,
+						80.0,
+						22.0
+					],
+					"numinlets": 2,
+					"numoutlets": 1,
+					"outlettype": [
+						""
+					]
+				}
+			},
+			{
+				"box": {
+					"id": "obj-20",
+					"maxclass": "message",
+					"text": "hoa normalization SN3D",
+					"patching_rect": [
+						425.0,
+						180.0,
+						150.0,
+						22.0
+					],
+					"numinlets": 2,
+					"numoutlets": 1,
+					"outlettype": [
+						""
+					]
+				}
+			},
+			{
+				"box": {
+					"id": "obj-21",
+					"maxclass": "newobj",
+					"text": "mc.combine~ 3",
+					"patching_rect": [
+						15.0,
+						250.0,
+						100.0,
+						22.0
+					],
+					"numinlets": 3,
+					"numoutlets": 1,
+					"outlettype": [
+						"multichannelsignal"
+					]
+				}
+			},
+			{
+				"box": {
+					"id": "obj-22",
+					"maxclass": "comment",
+					"text": "objects / bed / hoa inlets",
+					"patching_rect": [
+						125.0,
+						250.0,
+						200.0,
+						20.0
 					],
 					"numinlets": 1,
 					"numoutlets": 0,
@@ -430,7 +536,67 @@
 			{
 				"patchline": {
 					"destination": [
+						"obj-15",
+						0
+					],
+					"source": [
 						"obj-13",
+						0
+					]
+				}
+			},
+			{
+				"patchline": {
+					"destination": [
+						"obj-13",
+						0
+					],
+					"source": [
+						"obj-17",
+						0
+					]
+				}
+			},
+			{
+				"patchline": {
+					"destination": [
+						"obj-13",
+						0
+					],
+					"source": [
+						"obj-18",
+						0
+					]
+				}
+			},
+			{
+				"patchline": {
+					"destination": [
+						"obj-13",
+						0
+					],
+					"source": [
+						"obj-19",
+						0
+					]
+				}
+			},
+			{
+				"patchline": {
+					"destination": [
+						"obj-13",
+						0
+					],
+					"source": [
+						"obj-20",
+						0
+					]
+				}
+			},
+			{
+				"patchline": {
+					"destination": [
+						"obj-21",
 						0
 					],
 					"source": [
@@ -442,11 +608,11 @@
 			{
 				"patchline": {
 					"destination": [
-						"obj-15",
+						"obj-13",
 						0
 					],
 					"source": [
-						"obj-13",
+						"obj-21",
 						0
 					]
 				}

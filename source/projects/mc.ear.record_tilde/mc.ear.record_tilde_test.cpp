@@ -257,6 +257,7 @@ SCENARIO("mc.ear.record~ records the input and the object metadata to an ADM fil
                 REQUIRE(items.objects.size() == 2);
                 REQUIRE(items.objects[1].blocks.size() == 2);
                 REQUIRE(items.objects[1].blocks[1].state.azimuth == Approx(-45.0));
+                REQUIRE(bw64::readFile(path)->channels() == 2);
                 const std::string next = out_path("recorded_chans_next.wav");
                 obj.start(atoms{ symbol(next) });
                 obj(io.input(), io.output());
@@ -307,6 +308,73 @@ SCENARIO("mc.ear.record~ records the input and the object metadata to an ADM fil
                 REQUIRE(contains(messages(obj, k_info), "position 4"));    // 192 frames = 4 ms
             }
             finish(obj);
+        }
+    }
+}
+
+SCENARIO("mc.ear.record~ records a bed and a scene after the objects") {
+    ext_main(nullptr);
+
+    GIVEN("an instance recording one object, a stereo bed and a first-order scene") {
+        test_wrapper<mc_ear_record_tilde> an_instance;
+        mc_ear_record_tilde& obj = an_instance;
+        obj.chans = 1;
+        obj.directchans = 2;
+        obj.hoaorder = 1;
+        obj.direct(atoms{ symbol("inputlayout"), symbol("0+2+0") });
+        obj.hoa(atoms{ symbol("normalization"), symbol("SN3D") });
+        start_dsp(obj);
+        REQUIRE(obj.mc_input_changed(0, 7) == 0);
+
+        WHEN("seven channels are recorded") {
+            const std::string path = out_path("recorded_bed.wav");
+            obj.start(atoms{ symbol(path) });
+            mc_audio_io io(7, k_block);
+            obj(io.input(), io.output());
+            obj.direct(atoms{ symbol("name"), symbol("stereo") });    // static metadata: taken at the stop
+            const auto info = finish(obj);
+
+            THEN("the file has the tracks in order: object, bed, scene") {
+                REQUIRE(contains(info, "written " + path + " 7 1.33333"));
+                auto reader = bw64::readFile(path);
+                REQUIRE(reader->channels() == 7);
+                std::vector<float> frames(64 * 7);
+                REQUIRE(reader->read(frames.data(), 64) == 64);
+                REQUIRE(frames[2] == Approx(0.75).margin(1e-6));    // the bed's second channel
+                reader.reset();
+                const auto items = admio::select_items(admio::load_file(path));
+                REQUIRE(items.warnings.empty());
+                REQUIRE(items.objects.size() == 1);
+                REQUIRE(items.objects[0].track == 0);
+                REQUIRE(items.direct.size() == 2);
+                REQUIRE(items.direct[0].name == "stereo");
+                REQUIRE(items.direct[0].track == 1);
+                REQUIRE(items.direct[0].labels == std::vector<std::string>{ "urn:itu:bs:2051:0:speaker:M+030" });
+                REQUIRE(items.direct[0].pack_id == "AP_00010002");
+                REQUIRE(items.direct[1].track == 2);
+                REQUIRE(items.hoa.size() == 1);
+                REQUIRE(items.hoa[0].order == 1);
+                REQUIRE(items.hoa[0].tracks == std::vector<int>{ 3, 4, 5, 6 });
+            }
+        }
+
+        WHEN("the scene is removed while recording") {
+            const std::string path = out_path("recorded_bed_change.wav");
+            obj.start(atoms{ symbol(path) });
+            mc_audio_io io(7, k_block);
+            obj(io.input(), io.output());
+            obj.hoaorder = -1;
+            obj.directchans = 0;
+            finish(obj);
+            THEN("the recording keeps its channels and the next one has the new layout") {
+                REQUIRE(bw64::readFile(path)->channels() == 7);
+                REQUIRE(admio::select_items(admio::load_file(path)).hoa.size() == 1);
+                const std::string next = out_path("recorded_bed_next.wav");
+                obj.start(atoms{ symbol(next) });
+                obj(io.input(), io.output());
+                finish(obj);
+                REQUIRE(bw64::readFile(next)->channels() == 1);
+            }
         }
     }
 }

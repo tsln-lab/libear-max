@@ -26,8 +26,10 @@ public:
                      "emit the metadata of the Objects items as mc.ear.objects~ messages with the EAR's interpolation "
                      "rules (a 'setvalue N ramp' message precedes each block). DirectSpeakers beds and HOA scenes are "
                      "emitted as mc.ear.direct~ and mc.ear.hoa~ messages when the file is read. For writing, 'record' "
-                     "captures the object messages sent to this object, and 'write' combines the captured timeline "
-                     "with an audio file recorded by mc.sfrecord~ into a BW64 file with ADM metadata." };
+                     "captures the object messages sent to this object, 'direct ...' and 'hoa ...' take the bed and "
+                     "scene metadata in the mc.ear.direct~ and mc.ear.hoa~ formats (written after the objects' tracks), "
+                     "and 'write' combines the captured metadata with an audio file recorded by mc.sfrecord~ into a "
+                     "BW64 file with ADM metadata." };
     MIN_TAGS{ "spatial audio, ADM, files" };
     MIN_AUTHOR{ "tsln-lab" };
     MIN_RELATED{ "mc.ear.objects~, mc.ear.direct~, mc.ear.hoa~, mc.ear.select~" };
@@ -49,6 +51,8 @@ private:
     // with mc.ear.record~; the clock (Max's scheduler) is here
     admio::object_capture m_capture;
     double m_capture_origin{ 0.0 };    // scheduler time (ms) when the capture started
+    admio::bed_capture m_bed;          // the DirectSpeakers channels after the objects (static)
+    admio::scene_capture m_scene;      // the HOA scene after the bed (static)
 
 public:
     inlet<> in_main{ this, "(read/time/start/stop/seek) play a file's metadata; (record/write/setvalue...) capture metadata" };
@@ -87,6 +91,37 @@ public:
 
     attribute<symbol> programmename{ this, "programmename", "libear-max",
         description{ "Name of the audioProgramme written." } };
+
+    attribute<int> directchans{ this, "directchans", 0,
+        description{ "Number of DirectSpeakers channels written as a bed on the tracks after the objects (0: no bed); "
+                     "their metadata comes from 'direct' messages." },
+        setter{ MIN_FUNCTION {
+            int n = static_cast<int>(args[0]);
+            n = std::max(0, std::min(n, 1024));
+            m_bed.resize(static_cast<size_t>(n));
+            return { n };
+        } } };
+
+    attribute<int> hoaorder{ this, "hoaorder", -1,
+        description{ "Ambisonic order of the HOA scene written on the (order+1)^2 tracks after the bed, in ACN order; "
+                     "-1 for no scene. Also set by 'hoa order N'." },
+        setter{ MIN_FUNCTION {
+            std::string error;
+            if (!m_scene.set_order(static_cast<int>(args[0]), error)) {
+                cerr << "hoaorder: " << error << endl;
+            }
+            return { m_scene.scene().order };
+        } } };
+
+    attribute<symbol> hoanormalization{ this, "hoanormalization", "SN3D",
+        description{ "Normalization of the HOA scene written: SN3D, N3D or FuMa. Also set by 'hoa normalization name'." },
+        setter{ MIN_FUNCTION {
+            std::string error;
+            if (!m_scene.set_normalization(std::string(args[0]), error)) {
+                cerr << "hoanormalization: " << error << endl;
+            }
+            return { symbol(m_scene.scene().normalization) };
+        } } };
 
     // ------------------------------------------------------------------
     // reading
@@ -200,9 +235,49 @@ public:
             return {};
         } };
 
-    message<> clear{ this, "clear", "Discard the captured timeline and reset every object's parameters.",
+    message<> clear{ this, "clear", "Discard the captured timeline and reset every object's and bed channel's parameters.",
         MIN_FUNCTION {
             m_capture.clear();
+            m_bed.clear();
+            return {};
+        } };
+
+    message<> direct{ this, "direct",
+        "Metadata of the bed written after the objects (see the directchans attribute), in the mc.ear.direct~ format: "
+        "'direct setvalue N speakerlabel M+030' (N is 1-based; 0 sets all channels), 'direct setvalue N position az el "
+        "[dist]', azimuth, elevation, distance, bounds, lfe, packformat, 'direct applyvalues parameter v1 v2 ...', "
+        "'direct inputlayout 0+5+0' (labels, positions and LFE after a BS.2051 layout, written as a reference to the "
+        "common definitions when the layout has one), 'direct name symbol' (the bed's audioObject name), or 'direct "
+        "parameter values' for all channels. The 'tracks' message of a reading ear.adm or mc.ear.play~ is ignored, "
+        "so their direct outlet can be fed to this message.",
+        MIN_FUNCTION {
+            std::string error;
+            if (!admio::apply_direct_message(m_bed, args, error)) {
+                cerr << error << endl;
+            }
+            return {};
+        } };
+
+    message<> hoa{ this, "hoa",
+        "Metadata of the HOA scene written after the bed, in the mc.ear.hoa~ format: 'hoa order N' (the hoaorder "
+        "attribute; -1 for no scene), 'hoa normalization SN3D|N3D|FuMa' and 'hoa name symbol'. The 'tracks' message "
+        "of a reading ear.adm or mc.ear.play~ is ignored, so their hoa outlet can be fed to this message.",
+        MIN_FUNCTION {
+            if (!args.empty() && atom_is_symbol(args[0]) && args.size() > 1) {
+                const std::string selector = args[0];
+                if (selector == "order") {
+                    hoaorder = static_cast<int>(static_cast<double>(args[1]));    // the attribute setter validates
+                    return {};
+                }
+                if (selector == "normalization") {
+                    hoanormalization = symbol(args[1]);
+                    return {};
+                }
+            }
+            std::string error;
+            if (!admio::apply_hoa_message(m_scene, args, error)) {
+                cerr << error << endl;
+            }
             return {};
         } };
 
@@ -220,8 +295,9 @@ public:
         } };
 
     message<> write{ this, "write",
-        "Write a BW64 file with the captured timeline as ADM metadata: 'write out.wav in.wav' copies the audio of "
-        "in.wav (one track per object, recorded with mc.sfrecord~ for example) into out.wav with the chna and axml chunks.",
+        "Write a BW64 file with the captured metadata as ADM: 'write out.wav in.wav' copies the audio of in.wav "
+        "(recorded with mc.sfrecord~ for example: one track per object, then the bed's channels, then the HOA "
+        "components) into out.wav with the chna and axml chunks. Reports 'written path tracks frames'.",
         MIN_FUNCTION {
             if (args.size() < 2 || !atom_is_symbol(args[0]) || !atom_is_symbol(args[1])) {
                 cerr << "write needs the output path and the path of the recorded audio" << endl;
@@ -232,16 +308,17 @@ public:
             try {
                 auto reader = bw64::readFile(in);
                 const double length = static_cast<double>(reader->numberOfFrames()) / reader->sampleRate();
-                const size_t objects = std::min<size_t>(m_capture.size(), reader->channels());
-                if (reader->channels() < m_capture.size()) {
-                    cerr << "the audio file has " << reader->channels() << " channels; only the first " << objects
-                         << " objects are written" << endl;
+                admio::captured_programme captured = captured_programme();
+                if (reader->channels() < captured.channels()) {
+                    cerr << "the audio file has " << reader->channels() << " channels but " << captured.channels()
+                         << " are captured; only what fits is written (objects first, then the bed, then the scene)" << endl;
+                    captured.limit(reader->channels());
                 }
                 std::vector<bw64::AudioId> chna_ids;
-                auto doc = admio::build_document(programme_name(), m_capture.objects(objects), length, chna_ids);
+                auto doc = build(captured, length, chna_ids);
                 reader.reset();
                 const uint64_t frames = admio::write_file(out, in, doc, chna_ids);
-                out_info.send("written", symbol(out), static_cast<int>(objects), static_cast<double>(frames));
+                out_info.send("written", symbol(out), static_cast<int>(captured.channels()), static_cast<double>(frames));
             }
             catch (const std::exception& e) {
                 cerr << "write: " << e.what() << endl;
@@ -250,7 +327,7 @@ public:
         } };
 
     message<> writexml{ this, "writexml",
-        "Write the captured timeline as an ADM XML file: 'writexml out.xml [length seconds]' (for inspection, or "
+        "Write the captured metadata as an ADM XML file: 'writexml out.xml [length seconds]' (for inspection, or "
         "for tools that take the metadata separately).",
         MIN_FUNCTION {
             if (args.empty() || !atom_is_symbol(args[0])) {
@@ -263,13 +340,14 @@ public:
             }
             try {
                 std::vector<bw64::AudioId> chna_ids;
-                auto doc = admio::build_document(programme_name(), m_capture.objects(m_capture.size()), length, chna_ids);
+                const admio::captured_programme captured = captured_programme();
+                auto doc = build(captured, length, chna_ids);
                 std::ofstream file(admio::resolve_path(std::string(args[0]), false));
                 if (!file) {
                     throw std::runtime_error("cannot open the file for writing");
                 }
                 file << admio::to_xml(doc);
-                out_info.send("written", args[0], static_cast<int>(m_capture.size()));
+                out_info.send("written", args[0], static_cast<int>(captured.channels()));
             }
             catch (const std::exception& e) {
                 cerr << "writexml: " << e.what() << endl;
@@ -405,6 +483,16 @@ public:
         return m_capture.blocks(i);
     }
 
+    const admio::bed_capture& bed() const
+    {
+        return m_bed;
+    }
+
+    const admio::captured_scene& scene() const
+    {
+        return m_scene.scene();
+    }
+
     bool running() const
     {
         return m_running;
@@ -434,6 +522,27 @@ private:
     {
         const symbol name = programmename;
         return name;
+    }
+
+    /// everything captured, as written: the objects, the bed, the scene
+    admio::captured_programme captured_programme() const
+    {
+        admio::captured_programme p;
+        p.name = programme_name();
+        p.objects = m_capture.objects(m_capture.size());
+        p.bed = m_bed.bed();
+        p.scene = m_scene.scene();
+        return p;
+    }
+
+    std::shared_ptr<adm::Document> build(const admio::captured_programme& captured, double length, std::vector<bw64::AudioId>& chna_ids)
+    {
+        std::vector<std::string> warnings;
+        auto doc = admio::build_document(captured, length, chna_ids, warnings);
+        for (const auto& w : warnings) {
+            cerr << w << endl;
+        }
+        return doc;
     }
 
     double now_ms() const

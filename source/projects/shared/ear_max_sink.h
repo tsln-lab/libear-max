@@ -3,9 +3,9 @@
 ///          thread pushes signal vectors into a ring buffer, a writer thread
 ///          drains it to a libbw64 writer in chunks, and when the recording
 ///          is finished the writer thread builds the ADM document from the
-///          captured timeline and closes the file with its chna and axml
-///          chunks (libbw64 writes the axml after the data, so the metadata
-///          only has to be known at the end).
+///          captured programme (objects, bed and HOA scene) and closes the
+///          file with its chna and axml chunks (libbw64 writes the axml
+///          after the data, so the metadata only has to be known at the end).
 ///
 /// Threads and what they own:
 ///
@@ -48,9 +48,10 @@ public:
     struct outcome {
         bool ok{ false };
         std::string error;
+        std::vector<std::string> warnings;    ///< metadata written differently from what was captured
         std::string path;
         uint64_t frames{ 0 };
-        size_t objects{ 0 };
+        size_t channels{ 0 };    ///< tracks with metadata (objects, bed and scene)
     };
 
     bw64_sink()
@@ -58,12 +59,11 @@ public:
         m_thread = std::thread([this] { run(); });
     }
 
-    /// A recording still in progress is finished with the objects given to
-    /// the last finish() call, or without metadata when there was none.
+    /// A recording still in progress is finished without metadata.
     ~bw64_sink()
     {
         if (recording()) {
-            finish({}, "libear-max");
+            finish({});
         }
         {
             std::lock_guard<std::mutex> lock(m_mutex);
@@ -116,17 +116,17 @@ public:
         return true;
     }
 
-    /// Stop taking audio and finish the file with the captured objects as
-    /// its ADM; the outcome is available when `has_outcome()`.
-    void finish(std::vector<captured_object> objects, std::string programme_name)
+    /// Stop taking audio and finish the file with the captured programme as
+    /// its ADM (none when it has no channels); the outcome is available when
+    /// `has_outcome()`.
+    void finish(captured_programme captured)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         if (!m_recording.load()) {
             return;
         }
         m_recording.store(false, std::memory_order_release);
-        m_finish_objects = std::move(objects);
-        m_finish_programme = std::move(programme_name);
+        m_finish_programme = std::move(captured);
         m_has_pending_finish = true;
         m_cv.notify_all();
     }
@@ -228,11 +228,10 @@ private:
             }
             if (m_has_pending_finish) {
                 m_has_pending_finish = false;
-                std::vector<captured_object> objects = std::move(m_finish_objects);
-                const std::string programme = m_finish_programme;
-                m_finish_objects.clear();
+                const captured_programme captured = std::move(m_finish_programme);
+                m_finish_programme = captured_programme();
                 lock.unlock();
-                finish_file(objects, programme);
+                finish_file(captured);
                 lock.lock();
                 continue;
             }
@@ -314,11 +313,11 @@ private:
         return true;
     }
 
-    void finish_file(const std::vector<captured_object>& objects, const std::string& programme)
+    void finish_file(const captured_programme& captured)
     {
         outcome result;
         result.path = m_path;
-        result.objects = objects.size();
+        result.channels = captured.channels();
         if (!m_writer) {
             result.error = m_error.empty() ? "no file was open" : m_error;
             m_error.clear();
@@ -330,9 +329,9 @@ private:
         try {
             const uint64_t frames = m_writer->framesWritten();
             const double length = m_samplerate ? static_cast<double>(frames) / m_samplerate : 0.0;
-            if (!objects.empty()) {
+            if (captured.channels() > 0) {
                 std::vector<bw64::AudioId> chna_ids;
-                auto doc = build_document(programme, objects, length, chna_ids);
+                auto doc = build_document(captured, length, chna_ids, result.warnings);
                 auto chna = std::make_shared<bw64::ChnaChunk>();
                 for (const auto& id : chna_ids) {
                     chna->addAudioId(id);
@@ -374,8 +373,7 @@ private:
     request m_pending_start;
     bool m_has_pending_start{ false };
     bool m_has_pending_finish{ false };
-    std::vector<captured_object> m_finish_objects;
-    std::string m_finish_programme;
+    captured_programme m_finish_programme;
     outcome m_outcome;
     std::function<void()> m_notify;
 

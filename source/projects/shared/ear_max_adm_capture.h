@@ -6,12 +6,15 @@
 ///          that moment as the block's interpolation. The caller supplies the
 ///          time of each change (ear.adm from Max's scheduler, mc.ear.record~
 ///          from the frames recorded so far), so the capture itself knows no
-///          clock.
+///          clock. A channel bed (bed_capture, the messages of mc.ear.direct~)
+///          and an HOA scene (scene_capture, the messages of mc.ear.hoa~) are
+///          static metadata, captured without a clock.
 /// @license Use of this source code is governed by the MIT License found in the License.md file.
 
 #pragma once
 
 #include "ear_max_adm.h"
+#include "ear_max_direct.h"
 
 #include "c74_min.h"
 
@@ -272,5 +275,265 @@ private:
     double m_last{ 0.0 };
     double m_default_ramp_ms{ 10.0 };
 };
+
+/// The DirectSpeakers channels written after the objects, taking the
+/// messages of mc.ear.direct~ ('setvalue N speakerlabel ...', 'inputlayout
+/// 0+5+0', 'applyvalues ...', or a parameter for all channels).
+class bed_capture {
+public:
+    size_t size() const
+    {
+        return m_channels.size();
+    }
+
+    void resize(size_t n)
+    {
+        m_channels.resize(n);
+    }
+
+    const std::string& name() const
+    {
+        return m_name;
+    }
+
+    void set_name(const std::string& name)
+    {
+        m_name = name;
+    }
+
+    const direct_metadata& at(size_t i) const
+    {
+        return m_channels[i];
+    }
+
+    void clear()
+    {
+        for (auto& ch : m_channels) {
+            ch = direct_metadata();
+        }
+    }
+
+    /// Apply an mc.ear.direct~ channel parameter to one channel (0-based).
+    bool apply_one(size_t i, const std::string& name, const atoms& values, std::string& error)
+    {
+        if (i >= m_channels.size()) {
+            error = "channel number out of range 1.." + std::to_string(m_channels.size());
+            return false;
+        }
+        return m_channels[i].apply(name, values, [&](const std::string& m) { error = m; });
+    }
+
+    bool apply_all(const std::string& name, const atoms& values, std::string& error)
+    {
+        for (size_t i = 0; i < m_channels.size(); ++i) {
+            if (!apply_one(i, name, values, error)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /// Label the channels after a BS.2051 layout, as mc.ear.direct~'s
+    /// 'inputlayout': labels, nominal positions and LFE; when the layout is
+    /// a common definitions one its audioPackFormatID is set as well, so
+    /// the bed is written as a reference to it. Channels beyond the layout
+    /// are cleared.
+    bool apply_layout(const std::string& layout_name, std::string& error)
+    {
+        ear::Layout layout;
+        try {
+            layout = ear::getLayout(layout_name);
+        }
+        catch (const std::exception& e) {
+            error = e.what();
+            return false;
+        }
+        const auto& channels = layout.channels();
+        if (channels.size() > m_channels.size()) {
+            error = "inputlayout " + layout.name() + " has " + std::to_string(channels.size()) + " channels but only "
+                    + std::to_string(m_channels.size()) + " are written (see the directchans attribute)";
+            return false;
+        }
+        const auto& packs = adm::audioPackFormatLookupTable();
+        const auto pack = packs.find(layout.name());
+        for (size_t i = 0; i < m_channels.size(); ++i) {
+            direct_metadata& meta = m_channels[i];
+            meta = direct_metadata();
+            if (i < channels.size()) {
+                meta.dstm.speakerLabels = { channels[i].name() };
+                meta.dstm.channelFrequency.lowPass = channels[i].isLfe() ? boost::optional<double>(120.0) : boost::none;
+                const auto pos = channels[i].polarPositionNominal();
+                meta.position = ear::PolarSpeakerPosition(pos.azimuth, pos.elevation, pos.distance);
+                meta.rebuild_position();
+                if (pack != packs.end()) {
+                    meta.dstm.audioPackFormatID = adm::formatId(pack->second);
+                }
+            }
+        }
+        return true;
+    }
+
+    /// The bed as captured, for build_document. Every channel is written
+    /// with its position (the default is 0 0 1, as in mc.ear.direct~): ADM
+    /// asks for one, and libadm writes one in any case.
+    captured_bed bed() const
+    {
+        captured_bed out;
+        out.name = m_name;
+        for (const auto& meta : m_channels) {
+            captured_direct_channel ch;
+            ch.labels = meta.dstm.speakerLabels;
+            ch.has_position = true;
+            ch.azimuth = meta.position.azimuth;
+            ch.elevation = meta.position.elevation;
+            ch.distance = meta.position.distance;
+            ch.bounds = meta.bounds;
+            ch.lfe = static_cast<bool>(meta.dstm.channelFrequency.lowPass);
+            ch.pack_id = meta.dstm.audioPackFormatID ? *meta.dstm.audioPackFormatID : std::string();
+            out.channels.push_back(std::move(ch));
+        }
+        return out;
+    }
+
+private:
+    std::string m_name{ "bed" };
+    std::vector<direct_metadata> m_channels;
+};
+
+/// The HOA scene written after the bed: the order and normalization of
+/// mc.ear.hoa~ ('order N', 'normalization SN3D'), and a name.
+class scene_capture {
+public:
+    const captured_scene& scene() const
+    {
+        return m_scene;
+    }
+
+    bool set_order(int order, std::string& error)
+    {
+        if (order > hoa::k_max_order) {
+            error = "order must be between 0 and " + std::to_string(hoa::k_max_order) + " (negative: no scene)";
+            return false;
+        }
+        m_scene.order = std::max(-1, order);
+        return true;
+    }
+
+    bool set_normalization(const std::string& name, std::string& error)
+    {
+        if (name != "SN3D" && name != "N3D" && name != "FuMa") {
+            error = "normalization must be SN3D, N3D or FuMa";
+            return false;
+        }
+        m_scene.normalization = name;
+        return true;
+    }
+
+    void set_name(const std::string& name)
+    {
+        m_scene.name = name;
+    }
+
+private:
+    captured_scene m_scene;
+};
+
+/// Apply a message sent to the 'direct' inlet (or with 'direct' prepended)
+/// of a capturing object: the mc.ear.direct~ messages 'setvalue N parameter
+/// values...', 'applyvalues parameter v1 v2 ...', 'inputlayout name', plus
+/// 'name symbol' for the bed, and any channel parameter for all channels.
+/// The 'tracks' message of ear.adm and mc.ear.play~ is ignored, so their
+/// direct outlet can be fed straight back. Returns false with `error` set.
+inline bool apply_direct_message(bed_capture& bed, const atoms& args, std::string& error)
+{
+    if (args.empty() || !atom_is_symbol(args[0])) {
+        error = "direct needs a message: setvalue, applyvalues, inputlayout, name or a channel parameter";
+        return false;
+    }
+    const std::string selector = args[0];
+    const atoms rest(args.begin() + 1, args.end());
+    if (selector == "tracks") {
+        return true;
+    }
+    if (selector == "name") {
+        if (rest.empty() || !atom_is_symbol(rest[0])) {
+            error = "direct name needs a symbol";
+            return false;
+        }
+        bed.set_name(std::string(rest[0]));
+        return true;
+    }
+    if (selector == "inputlayout") {
+        if (rest.empty() || !atom_is_symbol(rest[0])) {
+            error = "direct inputlayout needs a layout name";
+            return false;
+        }
+        return bed.apply_layout(std::string(rest[0]), error);
+    }
+    if (selector == "setvalue") {
+        if (rest.size() < 2 || !atom_is_numeric(rest[0]) || !atom_is_symbol(rest[1])) {
+            error = "direct setvalue needs a channel number (1-based, 0 for all) and a parameter name";
+            return false;
+        }
+        const long index = static_cast<long>(static_cast<double>(rest[0]));
+        if (index < 0 || static_cast<size_t>(index) > bed.size()) {
+            error = "direct setvalue: channel number out of range 0.." + std::to_string(bed.size());
+            return false;
+        }
+        const std::string parameter = rest[1];
+        const atoms values(rest.begin() + 2, rest.end());
+        return index == 0 ? bed.apply_all(parameter, values, error) : bed.apply_one(static_cast<size_t>(index - 1), parameter, values, error);
+    }
+    if (selector == "applyvalues") {
+        if (rest.empty() || !atom_is_symbol(rest[0])) {
+            error = "direct applyvalues needs a parameter name followed by one value per channel";
+            return false;
+        }
+        const std::string parameter = rest[0];
+        const size_t n = std::min(rest.size() - 1, bed.size());
+        for (size_t i = 0; i < n; ++i) {
+            if (!bed.apply_one(i, parameter, atoms{ rest[i + 1] }, error)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    return bed.apply_all(selector, rest, error);
+}
+
+/// Apply a message sent to the 'hoa' inlet (or with 'hoa' prepended): the
+/// mc.ear.hoa~ settings 'order N' and 'normalization name', plus 'name
+/// symbol' for the scene; 'tracks' is ignored as above.
+inline bool apply_hoa_message(scene_capture& scene, const atoms& args, std::string& error)
+{
+    if (args.empty() || !atom_is_symbol(args[0])) {
+        error = "hoa needs a message: order, normalization or name";
+        return false;
+    }
+    const std::string selector = args[0];
+    if (selector == "tracks") {
+        return true;
+    }
+    if (selector == "order") {
+        if (args.size() < 2 || !atom_is_numeric(args[1])) {
+            error = "hoa order needs a number";
+            return false;
+        }
+        return scene.set_order(static_cast<int>(static_cast<double>(args[1])), error);
+    }
+    if (selector == "normalization" || selector == "name") {
+        if (args.size() < 2 || !atom_is_symbol(args[1])) {
+            error = "hoa " + selector + " needs a symbol";
+            return false;
+        }
+        if (selector == "name") {
+            scene.set_name(std::string(args[1]));
+            return true;
+        }
+        return scene.set_normalization(std::string(args[1]), error);
+    }
+    error = "unknown hoa message: " + selector + " (order, normalization or name)";
+    return false;
+}
 
 } // namespace earmax::admio
