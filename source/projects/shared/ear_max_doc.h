@@ -71,6 +71,14 @@ inline std::string xml_escape(const std::string& text)
     return out;
 }
 
+/// A Min symbol as a string. Copy-initialisation picks the symbol's
+/// std::string conversion; std::string(sym) is ambiguous for MSVC because
+/// the symbol also converts to const char*.
+inline std::string symbol_string(const symbol& s)
+{
+    return s;
+}
+
 /// Atoms as text: numbers in their shortest form, symbols as they are.
 inline std::string atoms_string(const atoms& values)
 {
@@ -294,7 +302,7 @@ void generate(const min_class_type& instance, const std::string& path, const std
         const std::string text = attr->description_string();
         methods[name] = { "Set the " + name + " attribute",
                           "Set the @" + name + " attribute. " + text,
-                          name, argument_type(std::string(attr->datatype())) };
+                          name, argument_type(symbol_string(attr->datatype())) };
     }
 
     out << "\t<!--MESSAGES-->\n\n\t<methodlist>\n";
@@ -322,7 +330,7 @@ void generate(const min_class_type& instance, const std::string& path, const std
             text += " Default: " + fallback + ".";
         }
         out << "\t\t<attribute name='" << xml_escape(name) << "' get='1' set='" << (attr->writable() ? "1" : "0")
-            << "' type='" << xml_escape(std::string(attr->datatype())) << "' size='1'>\n";
+            << "' type='" << xml_escape(symbol_string(attr->datatype())) << "' size='1'>\n";
         out << "\t\t\t<digest>" << format(digest(attr->description_string())) << "</digest>\n";
         out << "\t\t\t<description>" << format(text) << "</description>\n";
         out << "\t\t</attribute>\n";
