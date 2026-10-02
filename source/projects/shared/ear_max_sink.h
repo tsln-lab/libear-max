@@ -81,7 +81,9 @@ public:
     // ---- main thread -------------------------------------------------
 
     /// Called from the writer thread when a recording has finished (its
-    /// outcome can then be taken); use it to wake the main thread.
+    /// outcome can then be taken); use it to wake the main thread. It must
+    /// not call back into the sink. Setting an empty function waits for a
+    /// call in progress, so the owner can clear it before going away.
     void set_notify(std::function<void()> fn)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -354,16 +356,14 @@ private:
 
     void publish(const outcome& result)
     {
-        std::function<void()> notify;
-        {
-            std::lock_guard<std::mutex> lock(m_mutex);
-            m_outcome = result;
-            m_has_outcome.store(true, std::memory_order_release);
-            m_busy.store(false, std::memory_order_release);
-            notify = m_notify;
-        }
-        if (notify) {
-            notify();
+        // the notify runs under the lock, so that set_notify({}) (the
+        // owner going away) waits for a call in flight
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_outcome = result;
+        m_has_outcome.store(true, std::memory_order_release);
+        m_busy.store(false, std::memory_order_release);
+        if (m_notify) {
+            m_notify();
         }
     }
 

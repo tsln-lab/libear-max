@@ -90,7 +90,9 @@ public:
         setter{ MIN_FUNCTION {
             int n = static_cast<int>(args[0]);
             n = std::max(1, std::min(n, 1024));
-            m_capture.resize(static_cast<size_t>(n));
+            if (!m_sink.recording()) {
+                m_capture.resize(static_cast<size_t>(n));    // while recording: applied by the next begin()
+            }
             return { n };
         } } };
 
@@ -366,6 +368,7 @@ private:
         if (!m_dsp_started) {
             cerr << "the audio is not running: the file will be empty until it is" << endl;
         }
+        m_capture.resize(static_cast<size_t>(static_cast<int>(chans)));    // a chans set while recording
         m_recorded_channels = m_capture.size();
         if (!m_sink.start(m_path, static_cast<uint16_t>(m_recorded_channels), static_cast<uint32_t>(std::lround(m_samplerate)),
                           static_cast<uint16_t>(static_cast<int>(bitdepth)))) {

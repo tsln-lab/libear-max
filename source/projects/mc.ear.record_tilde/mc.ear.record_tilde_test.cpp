@@ -242,6 +242,29 @@ SCENARIO("mc.ear.record~ records the input and the object metadata to an ADM fil
             }
         }
 
+        WHEN("chans is changed while recording") {
+            const std::string path = out_path("recorded_chans.wav");
+            obj.setvalue(atoms{ 2, symbol("azimuth"), 45.0 });
+            obj.start(atoms{ symbol(path) });
+            mc_audio_io io(2, k_block);
+            obj(io.input(), io.output());
+            obj.chans = 1;
+            obj.setvalue(atoms{ 2, symbol("azimuth"), -45.0 });    // still captured
+            obj(io.input(), io.output());
+            finish(obj);
+            THEN("the recording keeps its objects and the new count applies to the next one") {
+                const auto items = admio::select_items(admio::load_file(path));
+                REQUIRE(items.objects.size() == 2);
+                REQUIRE(items.objects[1].blocks.size() == 2);
+                REQUIRE(items.objects[1].blocks[1].state.azimuth == Approx(-45.0));
+                const std::string next = out_path("recorded_chans_next.wav");
+                obj.start(atoms{ symbol(next) });
+                obj(io.input(), io.output());
+                finish(obj);
+                REQUIRE(bw64::readFile(next)->channels() == 1);
+            }
+        }
+
         WHEN("the file is stopped at once") {
             const std::string path = out_path("recorded_empty.wav");
             obj.start(atoms{ symbol(path) });
