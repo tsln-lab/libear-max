@@ -285,7 +285,7 @@
 				"box": {
 					"id": "obj-14",
 					"maxclass": "comment",
-					"text": "outlet: recording, written (path, objects, length in ms), failed, position",
+					"text": "outlet: recording, written (path, tracks, length in ms), failed, position",
 					"patching_rect": [
 						355.0,
 						295.0,

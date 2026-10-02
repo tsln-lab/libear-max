@@ -255,7 +255,7 @@ parameter as a message for all objects), so the same messages can drive
 both at once and the mix is heard as it is recorded; the bed and scene
 metadata is static, given with `direct ...` and `hoa ...` as in `ear.adm`. `open file.wav` names the file, `start` (or `1`) records
 from the objects' current parameters, `stop` (or `0`) finishes it and
-reports `written path objects length-ms` on the outlet (`failed path` when
+reports `written path tracks length-ms` on the outlet (`failed path` when
 the file could not be written). Every change while recording becomes an
 `audioBlockFormat` at the time of the audio recorded so far (the frames the
 audio thread has handed over), with the ramp in force as its interpolation,
