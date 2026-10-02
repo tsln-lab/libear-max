@@ -256,6 +256,38 @@ SCENARIO("ear.adm reads the rendering items of an ADM file like the EAR") {
             }
         }
 
+        WHEN("the time is in a gap between two blocks of an object, or after its last block") {
+            obj.time(atoms{ 1000.0 });
+            clear_outputs(obj);
+            obj.time(atoms{ 2200.0 });
+            THEN("the object is silenced once, as in the EAR") {
+                auto objects = messages(obj, k_objects);
+                REQUIRE(objects == std::vector<std::string>{ "setvalue 1 ramp 0", "setvalue 1 gain 0" });
+                clear_outputs(obj);
+                obj.time(atoms{ 2300.0 });
+                REQUIRE(messages(obj, k_objects).empty());
+            }
+            AND_WHEN("the next block starts") {
+                clear_outputs(obj);
+                obj.time(atoms{ 2600.0 });
+                THEN("object A comes back with a jump and object B, whose last block ended at 2.5 s, is silenced") {
+                    const auto objects = messages(obj, k_objects);
+                    REQUIRE(objects.front() == "setvalue 1 ramp 0");
+                    REQUIRE(contains(objects, "setvalue 1 gain 1"));
+                    REQUIRE(contains(objects, "setvalue 1 position 0 30 1"));
+                    REQUIRE(contains(objects, "setvalue 2 gain 0"));
+                }
+            }
+        }
+
+        WHEN("the time is before an object's first block") {
+            obj.time(atoms{ 0.0 });
+            clear_outputs(obj);
+            THEN("nothing is sent for it (its gain was never set)") {
+                REQUIRE(count_prefix(messages(obj, k_objects), "setvalue 2 ") == 0);
+            }
+        }
+
         WHEN("the transport is stepped from the start") {
             obj.seek(atoms{ 0.0 });
             clear_outputs(obj);
@@ -267,6 +299,12 @@ SCENARIO("ear.adm reads the rendering items of an ADM file like the EAR") {
             }
             obj.step();
             REQUIRE(obj.position() == Approx(1.0));
+            obj.step();
+            THEN("the end of a block is a step too: object A falls silent at 2 s") {
+                REQUIRE(obj.position() == Approx(2.0));
+                const auto objects = messages(obj, k_objects);
+                REQUIRE(objects.back() == "setvalue 1 gain 0");
+            }
             obj.step();
             REQUIRE(obj.position() == Approx(2.5));
             obj.step();
@@ -321,10 +359,12 @@ SCENARIO("ear.adm captures object messages and writes them as ADM") {
         obj.capture_at(2000.0, "diffuse", 0, atoms{ 0.25 });
         obj.capture_at(2500.0, "zone", 0, atoms{ symbol("clear") });    // not supported: ignored
         obj.capture_at(2500.0, "azimuth", 1, atoms{ symbol("left") });  // invalid: ignored
+        obj.capture_at(3000.0, "ramp", 1, atoms{ -1.0 });                // back to the ramp attribute
+        obj.capture_at(3000.0, "elevation", 1, atoms{ 20.0 });
 
         THEN("the changes are timestamped from the capture start, one block per time") {
             const auto& one = obj.captured(0);
-            REQUIRE(one.size() == 3);
+            REQUIRE(one.size() == 4);
             REQUIRE(one[0].time == Approx(0.0));
             REQUIRE(one[0].state.azimuth == Approx(30.0));
             REQUIRE(one[1].time == Approx(0.5));
@@ -335,6 +375,9 @@ SCENARIO("ear.adm captures object messages and writes them as ADM") {
             REQUIRE(one[2].time == Approx(1.0));
             REQUIRE(one[2].ramp == Approx(0.25));    // the object's ramp persists like the renderers' per-object ramp
             REQUIRE(one[2].state.diffuse == Approx(0.25));
+            REQUIRE(one[3].time == Approx(2.0));
+            REQUIRE(one[3].ramp == Approx(0.01));    // a negative ramp returned the object to the attribute (10 ms)
+            REQUIRE(one[3].state.elevation == Approx(20.0));
             const auto& two = obj.captured(1);
             REQUIRE(two.size() == 2);
             REQUIRE(two[1].time == Approx(1.0));
@@ -368,7 +411,7 @@ SCENARIO("ear.adm captures object messages and writes them as ADM") {
                 REQUIRE(items.objects[1].track == 1);
 
                 const auto& voice = items.objects[0].blocks;
-                REQUIRE(voice.size() == 3);
+                REQUIRE(voice.size() == 4);
                 REQUIRE(voice[0].start == Approx(0.0));
                 REQUIRE(voice[0].end == Approx(0.5));
                 REQUIRE(voice[0].state.azimuth == Approx(30.0));
@@ -379,9 +422,12 @@ SCENARIO("ear.adm captures object messages and writes them as ADM") {
                 REQUIRE(voice[1].state.elevation == Approx(10.0));
                 REQUIRE(voice[1].state.gain == Approx(0.5));
                 REQUIRE(voice[2].start == Approx(1.0));
-                REQUIRE(voice[2].end == Approx(2.0));    // lasts until the end of the audio
+                REQUIRE(voice[2].end == Approx(2.0));
                 REQUIRE(voice[2].interp == Approx(0.25));    // the object's ramp stays until it is changed
                 REQUIRE(voice[2].state.diffuse == Approx(0.25));
+                REQUIRE(voice[3].start == Approx(2.0));
+                REQUIRE(voice[3].end == Approx(2.0));    // at the end of the audio: an empty last block
+                REQUIRE(voice[3].state.elevation == Approx(20.0));
 
                 const auto& second = items.objects[1].blocks;
                 REQUIRE(second.size() == 2);

@@ -43,7 +43,8 @@ private:
     admio::selection m_items;
     bool m_loaded{ false };
     int m_programme{ 0 };
-    std::vector<int> m_emitted;    // per Objects item: index of the last emitted block, -1 for none
+    static constexpr int k_silent = -2;
+    std::vector<int> m_emitted;    // per Objects item: index of the last emitted block, -1 for none, k_silent after a block ended
     double m_position{ 0.0 };      // transport position in seconds
     bool m_running{ false };
 
@@ -51,7 +52,7 @@ private:
     struct capture_slot {
         std::string name;
         admio::object_state state;
-        double ramp_ms{ 10.0 };
+        double ramp_ms{ -1.0 };    // per-object interpolation time; negative = the ramp attribute
         std::vector<admio::captured_block> blocks;
     };
     std::vector<capture_slot> m_slots;
@@ -75,6 +76,13 @@ public:
     // attributes
     // ------------------------------------------------------------------
 
+    attribute<number> ramp{ this, "ramp", 10.0,
+        description{ "Default interpolation time in milliseconds written for captured changes, as the renderer's "
+                     "ramp attribute; 'setvalue N ramp ms' overrides it per object (a negative value returns to it)." },
+        setter{ MIN_FUNCTION {
+            return { std::max(0.0, static_cast<double>(args[0])) };
+        } } };
+
     attribute<int> chans{ this, "chans", 16,
         description{ "Number of objects captured for writing (one per audio track of the file written)." },
         setter{ MIN_FUNCTION {
@@ -82,17 +90,6 @@ public:
             n = std::max(1, std::min(n, 1024));
             resize_slots(static_cast<size_t>(n));
             return { n };
-        } } };
-
-    attribute<number> ramp{ this, "ramp", 10.0,
-        description{ "Default interpolation time in milliseconds written for captured changes, as the renderer's "
-                     "ramp attribute; 'setvalue N ramp ms' overrides it per object." },
-        setter{ MIN_FUNCTION {
-            const double ms = std::max(0.0, static_cast<double>(args[0]));
-            for (auto& slot : m_slots) {
-                slot.ramp_ms = ms;
-            }
-            return { ms };
         } } };
 
     attribute<symbol> programmename{ this, "programmename", "libear-max",
@@ -217,7 +214,7 @@ public:
             for (auto& slot : m_slots) {
                 slot.blocks.clear();
                 slot.state = admio::object_state();
-                slot.ramp_ms = static_cast<double>(ramp);
+                slot.ramp_ms = -1.0;
             }
             m_capture_last = 0.0;
             return {};
@@ -300,7 +297,8 @@ public:
         "Captured object metadata, in the mc.ear.objects~ format: 'setvalue N parameter values...' (N is 1-based; 0 "
         "sets all objects). Parameters: azimuth elevation distance x y z cartesian position width height depth gain "
         "diffuse channellock channellock_distance divergence divergence_range screenref screenedgelock_h "
-        "screenedgelock_v ramp.",
+        "screenedgelock_v, and ramp (the interpolation time written for the next changes of that object; negative "
+        "returns to the ramp attribute).",
         MIN_FUNCTION {
             if (args.size() < 2 || !atom_is_numeric(args[0]) || !atom_is_symbol(args[1])) {
                 cerr << "setvalue needs an object number (1-based, 0 for all) and a parameter name" << endl;
@@ -356,7 +354,9 @@ public:
     // transport timer
     // ------------------------------------------------------------------
 
-    timer<> m_timer{ this, MIN_FUNCTION {
+    // delivered on Max's main thread, like the messages that share the
+    // transport state (the renderers' messages are deferred there anyway)
+    timer<timer_options::defer_delivery> m_timer{ this, MIN_FUNCTION {
         on_tick();
         return {};
     } };
@@ -628,13 +628,26 @@ private:
     }
 
     /// emit the blocks active at `time` for every Objects item whose block
-    /// changed since the last emission; `jump` forces an immediate change
+    /// changed since the last emission; `jump` forces an immediate change.
+    /// An object is silent outside its blocks (before the first, after one
+    /// that ended with a gap before the next, and after the last one with a
+    /// duration), as in the EAR: its gain is set to 0 once.
     void emit_objects(double time, bool jump)
     {
         for (size_t i = 0; i < m_items.objects.size(); ++i) {
             const auto& item = m_items.objects[i];
             const int current = admio::block_at(item, time);
-            if (current < 0 || current == m_emitted[i]) {
+            const bool active = current >= 0 && time + 1e-6 < item.blocks[static_cast<size_t>(current)].end;
+            if (!active) {
+                if (m_emitted[i] != k_silent && m_emitted[i] != -1) {
+                    const int n = static_cast<int>(i + 1);
+                    out_objects.send("setvalue", n, symbol("ramp"), 0.0);
+                    out_objects.send("setvalue", n, symbol("gain"), 0.0);
+                }
+                m_emitted[i] = current < 0 ? -1 : k_silent;
+                continue;
+            }
+            if (current == m_emitted[i]) {
                 continue;
             }
             const auto& block = item.blocks[static_cast<size_t>(current)];
@@ -669,8 +682,8 @@ private:
         out_objects.send("setvalue", n, symbol("screenedgelock_v"), symbol(s.screenedgelock_v));
     }
 
-    /// the next block start after `time` over all Objects items, or the file
-    /// end when nothing is left; +inf when past the end
+    /// the next block start or end after `time` over all Objects items, or
+    /// the end of the file when nothing is left; +inf when past the end
     double next_boundary(double time) const
     {
         double next = std::numeric_limits<double>::infinity();
@@ -678,6 +691,9 @@ private:
             for (const auto& block : item.blocks) {
                 if (block.start > time + 1e-6 && block.start < next) {
                     next = block.start;
+                }
+                if (block.end > time + 1e-6 && block.end < next) {
+                    next = block.end;
                 }
             }
         }
@@ -732,7 +748,6 @@ private:
         m_slots.resize(n);
         for (size_t i = old; i < n; ++i) {
             m_slots[i].name = "object " + std::to_string(i + 1);
-            m_slots[i].ramp_ms = static_cast<double>(ramp);
         }
     }
 
@@ -754,13 +769,14 @@ private:
         }
         capture_slot& slot = m_slots[i];
         const double t = std::max(0.0, (now_ms() - m_capture_origin) / 1000.0);
+        const double ramp_seconds = (slot.ramp_ms < 0.0 ? static_cast<double>(ramp) : slot.ramp_ms) / 1000.0;
         m_capture_last = std::max(m_capture_last, t);
         if (!slot.blocks.empty() && same_time(slot.blocks.back().time, t)) {
             slot.blocks.back().state = slot.state;    // several parameters at the same time: one block
-            slot.blocks.back().ramp = slot.ramp_ms / 1000.0;
+            slot.blocks.back().ramp = ramp_seconds;
             return;
         }
-        slot.blocks.push_back({ t, slot.ramp_ms / 1000.0, slot.state });
+        slot.blocks.push_back({ t, ramp_seconds, slot.state });
     }
 
     void capture_one(size_t i, const std::string& parameter, const atoms& values)
@@ -823,7 +839,7 @@ private:
         if (name == "divergence_range") return number_at(values, 0, s.divergence_range, error, "divergence_range");
         if (name == "ramp") {
             if (!number_at(values, 0, v, error, "ramp")) return false;
-            slot.ramp_ms = std::max(0.0, v);
+            slot.ramp_ms = v < 0.0 ? -1.0 : v;    // negative: back to the ramp attribute, like the renderers
             return true;
         }
         if (name == "cartesian" || name == "channellock" || name == "screenref") {

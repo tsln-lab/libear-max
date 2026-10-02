@@ -10,6 +10,8 @@
 #include "../shared/ear_max_mc.h"
 
 #include <algorithm>
+#include <atomic>
+#include <memory>
 
 using namespace earmax;
 
@@ -28,7 +30,15 @@ public:
     MIN_FLAGS{ documentation_flags::do_not_generate };
 
 private:
-    std::vector<long> m_tracks;    // 0-based input channels, one per output channel
+    using track_list = std::vector<long>;    // 0-based input channels, one per output channel
+    // the message thread publishes a new immutable list; the audio thread
+    // takes one snapshot per vector, so a change never tears a block
+    std::shared_ptr<const track_list> m_tracks{ std::make_shared<const track_list>(track_list{ 0 }) };
+
+    std::shared_ptr<const track_list> snapshot() const
+    {
+        return std::atomic_load_explicit(&m_tracks, std::memory_order_acquire);
+    }
 
 public:
     inlet<> in_main{ this, "(multichannelsignal) input; (tracks) the channels to select" };
@@ -36,9 +46,7 @@ public:
 
     mc_ear_select_tilde(const atoms& args = {})
     {
-        if (!set_tracks(args) || m_tracks.empty()) {
-            m_tracks = { 0 };
-        }
+        set_tracks(args);    // the default selection (channel 1) stays when there are no arguments
     }
 
     message<> tracks{ this, "tracks",
@@ -59,7 +67,7 @@ public:
 
     long mc_output_channels(long) const
     {
-        return static_cast<long>(std::max<size_t>(1, m_tracks.size()));
+        return static_cast<long>(std::max<size_t>(1, snapshot()->size()));
     }
 
     long mc_input_changed(long, long)
@@ -69,11 +77,12 @@ public:
 
     void operator()(audio_bundle input, audio_bundle output)
     {
+        const std::shared_ptr<const track_list> tracks = snapshot();
         const long frames = input.frame_count();
         const long outs = output.channel_count();
         for (long ch = 0; ch < outs; ++ch) {
             double* out = output.samples(ch);
-            const long source = ch < static_cast<long>(m_tracks.size()) ? m_tracks[static_cast<size_t>(ch)] : -1;
+            const long source = ch < static_cast<long>(tracks->size()) ? (*tracks)[static_cast<size_t>(ch)] : -1;
             if (source >= 0 && source < input.channel_count()) {
                 const double* in = input.samples(source);
                 std::copy(in, in + frames, out);
@@ -84,9 +93,9 @@ public:
         }
     }
 
-    const std::vector<long>& selected() const
+    std::vector<long> selected() const
     {
-        return m_tracks;
+        return *snapshot();
     }
 
 private:
@@ -106,7 +115,8 @@ private:
         if (tracks.empty()) {
             return false;
         }
-        m_tracks = std::move(tracks);
+        std::atomic_store_explicit(&m_tracks, std::shared_ptr<const track_list>(std::make_shared<const track_list>(std::move(tracks))),
+                                   std::memory_order_release);
         return true;
     }
 };

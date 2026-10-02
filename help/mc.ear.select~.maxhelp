@@ -85,10 +85,10 @@
 					"patching_rect": [
 						15.0,
 						90.0,
-						120.0,
+						125.0,
 						22.0
 					],
-					"text": "mc.sig~ @chans 8",
+					"text": "mc.noise~ @chans 8",
 					"numinlets": 1,
 					"numoutlets": 1,
 					"outlettype": [
@@ -169,7 +169,7 @@
 					"maxclass": "newobj",
 					"patching_rect": [
 						15.0,
-						130.0,
+						150.0,
 						120.0,
 						22.0
 					],
@@ -187,7 +187,7 @@
 					"maxclass": "comment",
 					"patching_rect": [
 						145.0,
-						130.0,
+						150.0,
 						300.0,
 						20.0
 					],
@@ -200,7 +200,7 @@
 					"maxclass": "newobj",
 					"patching_rect": [
 						15.0,
-						170.0,
+						190.0,
 						160.0,
 						22.0
 					],
@@ -218,7 +218,7 @@
 					"maxclass": "newobj",
 					"patching_rect": [
 						15.0,
-						210.0,
+						230.0,
 						60.0,
 						22.0
 					],
@@ -227,13 +227,31 @@
 					"numoutlets": 0,
 					"outlettype": []
 				}
+			},
+			{
+				"box": {
+					"id": "obj-12",
+					"maxclass": "newobj",
+					"patching_rect": [
+						15.0,
+						110.0,
+						70.0,
+						22.0
+					],
+					"text": "mc.*~ 0.1",
+					"numinlets": 2,
+					"numoutlets": 1,
+					"outlettype": [
+						"multichannelsignal"
+					]
+				}
 			}
 		],
 		"lines": [
 			{
 				"patchline": {
 					"destination": [
-						"obj-8",
+						"obj-12",
 						0
 					],
 					"source": [
@@ -298,6 +316,18 @@
 					],
 					"source": [
 						"obj-10",
+						0
+					]
+				}
+			},
+			{
+				"patchline": {
+					"destination": [
+						"obj-8",
+						0
+					],
+					"source": [
+						"obj-12",
 						0
 					]
 				}

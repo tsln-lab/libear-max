@@ -69,7 +69,7 @@
 				<arg name='ramp' optional='0' type='float' />
 			</arglist>
 			<digest>Set the ramp attribute</digest>
-			<description>Set the <at>ramp</at> attribute. Default interpolation time in milliseconds written for captured changes, as the renderer's ramp attribute; 'setvalue N ramp ms' overrides it per object.</description>
+			<description>Set the <at>ramp</at> attribute. Default interpolation time in milliseconds written for captured changes, as the renderer's ramp attribute; 'setvalue N ramp ms' overrides it per object (a negative value returns to it).</description>
 		</method>
 		<method name='read'>
 			<digest>Read an ADM (BW64) file: 'read path'</digest>
@@ -85,7 +85,7 @@
 		</method>
 		<method name='setvalue'>
 			<digest>Captured object metadata, in the mc.ear.objects~ format: 'setvalue N parameter values...' (N is 1-based; 0 sets all objects)</digest>
-			<description>Captured object metadata, in the mc.ear.objects~ format: 'setvalue N parameter values...' (N is 1-based; 0 sets all objects). Parameters: azimuth elevation distance x y z cartesian position width height depth gain diffuse channellock channellock_distance divergence divergence_range screenref screenedgelock_h screenedgelock_v ramp.</description>
+			<description>Captured object metadata, in the mc.ear.objects~ format: 'setvalue N parameter values...' (N is 1-based; 0 sets all objects). Parameters: azimuth elevation distance x y z cartesian position width height depth gain diffuse channellock channellock_distance divergence divergence_range screenref screenedgelock_h screenedgelock_v, and ramp (the interpolation time written for the next changes of that object; negative returns to the ramp attribute).</description>
 		</method>
 		<method name='start'>
 			<digest>Start the transport: emits the object metadata at every block boundary from the current position, on Max's scheduler, until the end of the file</digest>
@@ -121,8 +121,8 @@
 			<description>Name of the audioProgramme written. Default: libear-max.</description>
 		</attribute>
 		<attribute name='ramp' get='1' set='1' type='float64' size='1'>
-			<digest>Default interpolation time in milliseconds written for captured changes, as the renderer's ramp attribute; 'setvalue N ramp ms' overrides it per object</digest>
-			<description>Default interpolation time in milliseconds written for captured changes, as the renderer's ramp attribute; 'setvalue N ramp ms' overrides it per object. Default: 10.</description>
+			<digest>Default interpolation time in milliseconds written for captured changes, as the renderer's ramp attribute; 'setvalue N ramp ms' overrides it per object (a negative value returns to it)</digest>
+			<description>Default interpolation time in milliseconds written for captured changes, as the renderer's ramp attribute; 'setvalue N ramp ms' overrides it per object (a negative value returns to it). Default: 10.</description>
 		</attribute>
 	</attributelist>
 
