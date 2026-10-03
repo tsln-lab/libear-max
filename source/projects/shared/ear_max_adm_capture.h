@@ -291,9 +291,17 @@ public:
 
     void resize(size_t n)
     {
+        const size_t old = m_channels.size();
         m_channels.resize(n);
-        if (!m_blocks.empty()) {
+        if (m_capturing || !m_blocks.empty()) {
             m_blocks.resize(n);
+        }
+        if (m_capturing) {
+            // a channel added while capturing starts with its state as its
+            // first block, like the others did at begin()
+            for (size_t i = old; i < n; ++i) {
+                m_blocks[i].assign(1, block_of(m_channels[i], 0.0));
+            }
         }
     }
 

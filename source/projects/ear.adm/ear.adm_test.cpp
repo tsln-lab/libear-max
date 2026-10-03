@@ -576,6 +576,28 @@ SCENARIO("ear.adm captures a timed bed and plays its blocks back") {
     }
 }
 
+SCENARIO("ear.adm seeds a bed channel added while capturing") {
+    ext_main(nullptr);
+
+    GIVEN("an instance capturing a bed that grows by a channel") {
+        test_wrapper<ear_adm> an_instance;
+        ear_adm& obj = an_instance;
+        obj.directchans = 2;
+        obj.begin_capture_at(1000.0);
+        obj.directchans = 3;
+        obj.direct_at(3000.0, atoms{ symbol("setvalue"), 3, symbol("speakerlabel"), symbol("M+000") });
+        obj.stop();
+        THEN("the new channel starts with its state at time 0 and the change is its second block") {
+            const auto& three = obj.bed().blocks(2);
+            REQUIRE(three.size() == 2);
+            REQUIRE(three[0].time == Approx(0.0));
+            REQUIRE(three[0].labels.empty());
+            REQUIRE(three[1].time == Approx(2.0));
+            REQUIRE(three[1].labels == std::vector<std::string>{ "M+000" });
+        }
+    }
+}
+
 SCENARIO("ear.adm writes a DirectSpeakers bed and an HOA scene after the objects") {
     ext_main(nullptr);
 
