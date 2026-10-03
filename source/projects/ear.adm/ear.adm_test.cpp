@@ -381,6 +381,7 @@ SCENARIO("ear.adm captures object messages and writes them as ADM") {
         obj.capture_at(2500.0, "azimuth", 1, atoms{ symbol("left") });    // invalid: ignored
         obj.capture_at(3000.0, "ramp", 1, atoms{ -1.0 });                  // back to the ramp attribute
         obj.capture_at(3000.0, "elevation", 1, atoms{ 20.0 });
+        obj.capture_at(3000.0, "zone", 1, atoms{ symbol("clear"), 1 });    // surplus argument: ignored
         obj.capture_at(3500.0, "zone", 1, atoms{ symbol("clear") });
 
         THEN("the changes are timestamped from the capture start, one block per time") {
@@ -405,7 +406,7 @@ SCENARIO("ear.adm captures object messages and writes them as ADM") {
             REQUIRE(one[4].time == Approx(2.0));
             REQUIRE(one[4].ramp == Approx(0.01));    // a negative ramp returned the object to the attribute (10 ms)
             REQUIRE(one[4].state.elevation == Approx(20.0));
-            REQUIRE(one[4].state.zones.size() == 2);    // zones persist like any parameter
+            REQUIRE(one[4].state.zones.size() == 2);    // zones persist like any parameter; the bad clear was rejected
             REQUIRE(one[5].time == Approx(2.5));
             REQUIRE(one[5].state.zones.empty());
             const auto& two = obj.captured(1);
@@ -524,6 +525,56 @@ SCENARIO("ear.adm captures object messages and writes them as ADM") {
                 REQUIRE(obj.captured(0).empty());
                 REQUIRE(obj.captured(1).empty());
             }
+        }
+    }
+}
+
+SCENARIO("ear.adm keeps a zone's label through a file") {
+    ext_main(nullptr);
+
+    GIVEN("a file whose object has a labelled Cartesian zone and an unlabelled polar one") {
+        const std::string audio = write_audio("zone_label_audio.wav", 1, 4800);
+        const std::string out = std::string(EARMAX_TEST_OUT_DIR) + "/zone_label.wav";
+        admio::captured_object object;
+        object.name = "zoned";
+        admio::object_state state;
+        state.zones.push_back({ true, { -1.0, 1.0, -1.0, 0.0, -1.0, 1.0 }, "Rear" });
+        state.zones.push_back({ false, { -180.0, 180.0, 30.0, 90.0 }, "" });
+        object.blocks.push_back({ 0.0, 0.0, state });
+        std::vector<bw64::AudioId> chna_ids;
+        auto doc = admio::build_document("labels", { object }, 0.1, chna_ids);
+        REQUIRE(admio::to_xml(doc).find(">Rear</zone>") != std::string::npos);
+        std::remove(out.c_str());
+        admio::write_file(out, audio, doc, chna_ids);
+
+        test_wrapper<ear_adm> an_instance;
+        ear_adm& obj = an_instance;
+        obj.read(atoms{ symbol(out) });
+        REQUIRE(obj.loaded());
+
+        THEN("the zones come back with the label, and writing them again keeps it") {
+            const auto& blocks = obj.items().objects[0].blocks;
+            REQUIRE(blocks.size() == 1);
+            const auto& zones = blocks[0].state.zones;
+            REQUIRE(zones.size() == 2);
+            REQUIRE(zones[0].cartesian);
+            REQUIRE(zones[0].label == "Rear");
+            REQUIRE_FALSE(zones[1].cartesian);
+            REQUIRE(zones[1].label.empty());
+
+            admio::captured_object again;
+            again.name = "zoned";
+            again.blocks.push_back({ 0.0, 0.0, blocks[0].state });
+            std::vector<bw64::AudioId> ids;
+            const std::string xml = admio::to_xml(admio::build_document("labels", { again }, 0.1, ids));
+            REQUIRE(xml.find(">Rear</zone>") != std::string::npos);
+            REQUIRE(xml.find("minElevation=\"30") != std::string::npos);
+        }
+
+        THEN("playback sends the zones without the label, as the renderers take them") {
+            const auto objects = messages(obj, k_objects);
+            REQUIRE(contains(objects, "setvalue 1 zone cartesian -1 1 -1 0 -1 1"));
+            REQUIRE(contains(objects, "setvalue 1 zone polar -180 180 30 90"));
         }
     }
 }

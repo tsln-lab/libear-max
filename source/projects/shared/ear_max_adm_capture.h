@@ -280,6 +280,10 @@ private:
         }
         const std::string kind = values[0];
         if (kind == "clear") {
+            if (values.size() != 1) {
+                error = "zone clear takes no bounds";
+                return false;
+            }
             s.zones.clear();
             return true;
         }

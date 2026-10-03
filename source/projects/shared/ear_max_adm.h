@@ -103,6 +103,7 @@ struct exclusion_zone {
     /// minEl maxEl for a polar zone, minX maxX minY maxY minZ maxZ for a
     /// Cartesian one
     std::vector<double> bounds;
+    std::string label;    ///< the zone element's value in the file, if any (the 'zone' messages carry none)
 };
 
 struct object_state {
@@ -323,11 +324,13 @@ inline object_state state_of(const adm::AudioBlockFormatObjects& b)
             z.cartesian = true;
             z.bounds = { c.get<adm::MinX>().get(), c.get<adm::MaxX>().get(), c.get<adm::MinY>().get(),
                          c.get<adm::MaxY>().get(), c.get<adm::MinZ>().get(), c.get<adm::MaxZ>().get() };
+            if (c.has<adm::ZoneLabel>()) z.label = c.get<adm::ZoneLabel>().get();
         }
         else {
             const auto p = boost::get<adm::PolarZone>(zone);
             z.bounds = { p.get<adm::MinAzimuth>().get(), p.get<adm::MaxAzimuth>().get(),
                          p.get<adm::MinElevation>().get(), p.get<adm::MaxElevation>().get() };
+            if (p.has<adm::ZoneLabel>()) z.label = p.get<adm::ZoneLabel>().get();
         }
         s.zones.push_back(std::move(z));
     }
@@ -814,12 +817,16 @@ inline void add_object_blocks(adm::SimpleObjectHolder& holder, const captured_ob
                 for (const exclusion_zone& z : s.zones) {
                     const auto f = [&z](size_t i) { return static_cast<float>(z.bounds[i]); };
                     if (z.cartesian) {
-                        exclusion.add(adm::Zone(adm::CartesianZone(adm::MinX(f(0)), adm::MaxX(f(1)), adm::MinY(f(2)),
-                                                                   adm::MaxY(f(3)), adm::MinZ(f(4)), adm::MaxZ(f(5)))));
+                        adm::CartesianZone zone(adm::MinX(f(0)), adm::MaxX(f(1)), adm::MinY(f(2)), adm::MaxY(f(3)),
+                                                adm::MinZ(f(4)), adm::MaxZ(f(5)));
+                        if (!z.label.empty()) zone.set(adm::ZoneLabel(z.label));
+                        exclusion.add(adm::Zone(zone));
                     }
                     else {
-                        exclusion.add(adm::Zone(adm::PolarZone(adm::MinElevation(f(2)), adm::MaxElevation(f(3)),
-                                                               adm::MinAzimuth(f(0)), adm::MaxAzimuth(f(1)))));
+                        adm::PolarZone zone(adm::MinElevation(f(2)), adm::MaxElevation(f(3)), adm::MinAzimuth(f(0)),
+                                            adm::MaxAzimuth(f(1)));
+                        if (!z.label.empty()) zone.set(adm::ZoneLabel(z.label));
+                        exclusion.add(adm::Zone(zone));
                     }
                 }
                 block.set(exclusion);
