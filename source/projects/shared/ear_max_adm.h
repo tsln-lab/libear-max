@@ -133,9 +133,24 @@ struct objects_item {
     std::vector<object_block> blocks;
 };
 
+/// One audioBlockFormatDirectSpeakers: the channel's labels and nominal
+/// position for a span of time (most beds have one block for the whole
+/// file).
+struct direct_block {
+    double start{ 0.0 };
+    double end{ std::numeric_limits<double>::infinity() };
+    std::vector<std::string> labels;
+    bool has_position{ false };
+    double azimuth{ 0.0 };
+    double elevation{ 0.0 };
+    double distance{ 1.0 };
+    std::vector<double> bounds;    ///< azimuthMin azimuthMax elevationMin elevationMax [distanceMin distanceMax]
+};
+
 struct direct_item {
     std::string name;
     int track{ 0 };
+    // the first block's parameters (the whole channel's for a static bed)
     std::vector<std::string> labels;
     bool has_position{ false };
     double azimuth{ 0.0 };
@@ -144,6 +159,12 @@ struct direct_item {
     std::vector<double> bounds;    ///< azimuthMin azimuthMax elevationMin elevationMax [distanceMin distanceMax]
     bool lfe{ false };
     std::string pack_id;
+    std::vector<direct_block> blocks;    ///< every block, in time order
+
+    bool timed() const
+    {
+        return blocks.size() > 1;
+    }
 };
 
 struct hoa_item {
@@ -454,38 +475,55 @@ inline selection select_items(const loaded_file& file, int programme_index = -1)
                 if (pack) {
                     item.pack_id = adm::formatId(pack->get<adm::AudioPackFormatId>());
                 }
+                bool cartesian_warned = false;
                 for (const auto& b : cf->getElements<adm::AudioBlockFormatDirectSpeakers>()) {
+                    direct_block block;
+                    block.start = ctx.start + (b.has<adm::Rtime>() ? seconds(b.get<adm::Rtime>().get()) : 0.0);
+                    block.end = b.has<adm::Duration>() ? block.start + seconds(b.get<adm::Duration>().get()) : ctx.end;
                     for (const auto& label : b.get<adm::SpeakerLabels>()) {
-                        item.labels.push_back(label.get());
+                        block.labels.push_back(label.get());
                     }
                     if (b.has<adm::SphericalSpeakerPosition>() || b.has<adm::CartesianSpeakerPosition>()) {
                         if (b.has<adm::SphericalSpeakerPosition>()) {
                             const auto spherical = b.get<adm::SphericalSpeakerPosition>();
                             const auto* sp = &spherical;
-                            item.has_position = true;
-                            item.azimuth = sp->get<adm::Azimuth>().get();
-                            item.elevation = sp->get<adm::Elevation>().get();
-                            item.distance = sp->has<adm::Distance>() ? sp->get<adm::Distance>().get() : 1.0;
+                            block.has_position = true;
+                            block.azimuth = sp->get<adm::Azimuth>().get();
+                            block.elevation = sp->get<adm::Elevation>().get();
+                            block.distance = sp->has<adm::Distance>() ? sp->get<adm::Distance>().get() : 1.0;
                             const bool az_bounds = sp->has<adm::AzimuthMin>() || sp->has<adm::AzimuthMax>();
                             const bool el_bounds = sp->has<adm::ElevationMin>() || sp->has<adm::ElevationMax>();
                             const bool dist_bounds = sp->has<adm::DistanceMin>() || sp->has<adm::DistanceMax>();
                             if (az_bounds || el_bounds || dist_bounds) {
-                                item.bounds = { sp->has<adm::AzimuthMin>() ? sp->get<adm::AzimuthMin>().get() : item.azimuth,
-                                                sp->has<adm::AzimuthMax>() ? sp->get<adm::AzimuthMax>().get() : item.azimuth,
-                                                sp->has<adm::ElevationMin>() ? sp->get<adm::ElevationMin>().get() : item.elevation,
-                                                sp->has<adm::ElevationMax>() ? sp->get<adm::ElevationMax>().get() : item.elevation };
+                                block.bounds = { sp->has<adm::AzimuthMin>() ? sp->get<adm::AzimuthMin>().get() : block.azimuth,
+                                                 sp->has<adm::AzimuthMax>() ? sp->get<adm::AzimuthMax>().get() : block.azimuth,
+                                                 sp->has<adm::ElevationMin>() ? sp->get<adm::ElevationMin>().get() : block.elevation,
+                                                 sp->has<adm::ElevationMax>() ? sp->get<adm::ElevationMax>().get() : block.elevation };
                                 if (dist_bounds) {
-                                    item.bounds.push_back(sp->has<adm::DistanceMin>() ? sp->get<adm::DistanceMin>().get() : item.distance);
-                                    item.bounds.push_back(sp->has<adm::DistanceMax>() ? sp->get<adm::DistanceMax>().get() : item.distance);
+                                    block.bounds.push_back(sp->has<adm::DistanceMin>() ? sp->get<adm::DistanceMin>().get() : block.distance);
+                                    block.bounds.push_back(sp->has<adm::DistanceMax>() ? sp->get<adm::DistanceMax>().get() : block.distance);
                                 }
                             }
                         }
-                        else {
+                        else if (!cartesian_warned) {
+                            cartesian_warned = true;
                             result.warnings.push_back("audioObject '" + name + "': cartesian DirectSpeakers position is not supported; labels only");
                         }
                     }
-                    break;    // DirectSpeakers metadata is static: the first block defines the channel
+                    item.blocks.push_back(std::move(block));
                 }
+                if (item.blocks.empty()) {
+                    result.warnings.push_back("audioObject '" + name + "': no audioBlockFormat; track skipped");
+                    continue;
+                }
+                // the first block stands for the channel (the whole of it for a static bed)
+                const direct_block& first = item.blocks.front();
+                item.labels = first.labels;
+                item.has_position = first.has_position;
+                item.azimuth = first.azimuth;
+                item.elevation = first.elevation;
+                item.distance = first.distance;
+                item.bounds = first.bounds;
                 if (cf->has<adm::Frequency>()) {
                     const auto f = cf->get<adm::Frequency>();
                     item.lfe = f.has<adm::LowPass>();
@@ -544,6 +582,23 @@ inline selection select_items(const loaded_file& file, int programme_index = -1)
     return result;
 }
 
+/// Index of the DirectSpeakers block active at `time` (seconds): the last
+/// block starting at or before it, or -1 before the first (a bed keeps
+/// its last block's parameters after it ends).
+inline int direct_block_at(const direct_item& item, double time)
+{
+    int current = -1;
+    for (size_t k = 0; k < item.blocks.size(); ++k) {
+        if (item.blocks[k].start <= time + 1e-6) {
+            current = static_cast<int>(k);
+        }
+        else {
+            break;
+        }
+    }
+    return current;
+}
+
 /// Index of the block of an item active at `time` (seconds), or -1 before the
 /// first block. After the last block its last values keep applying.
 inline int block_at(const objects_item& item, double time)
@@ -577,9 +632,23 @@ struct captured_object {
     std::vector<captured_block> blocks;
 };
 
+/// One captured change of a DirectSpeakers channel's labels or position at
+/// `time` seconds (a timed bed: one audioBlockFormat per change).
+struct captured_direct_block {
+    double time{ 0.0 };
+    std::vector<std::string> labels;
+    bool has_position{ false };
+    double azimuth{ 0.0 };
+    double elevation{ 0.0 };
+    double distance{ 1.0 };
+    std::vector<double> bounds;
+};
+
 /// One captured DirectSpeakers channel: what mc.ear.direct~ takes for an
 /// input channel (speaker labels, nominal position with optional bounds,
-/// LFE, and the audioPackFormatID of a common definitions layout).
+/// LFE, and the audioPackFormatID of a common definitions layout). The
+/// labels and position are the channel's (a static bed) unless `blocks`
+/// holds more than one change: then each becomes a timed block.
 struct captured_direct_channel {
     std::vector<std::string> labels;
     bool has_position{ false };
@@ -589,6 +658,12 @@ struct captured_direct_channel {
     std::vector<double> bounds;    ///< azimuthMin azimuthMax elevationMin elevationMax [distanceMin distanceMax], or empty
     bool lfe{ false };
     std::string pack_id;    ///< common definitions audioPackFormatID (AP_0001xxxx) of the bed, or empty for a custom bed
+    std::vector<captured_direct_block> blocks;    ///< the timed changes, when the bed was captured over time
+
+    bool timed() const
+    {
+        return blocks.size() > 1;
+    }
 };
 
 /// A captured channel bed: one DirectSpeakers audioObject whose tracks
@@ -823,6 +898,10 @@ inline adm::AudioPackFormatId common_bed_pack(const captured_bed& bed, std::vect
             why_not = "the channels name different packformats";
             return none;
         }
+        if (ch.timed()) {
+            why_not = "packformat " + id + " cannot carry timed changes (the common definitions are static)";
+            return none;
+        }
         if (ch.labels.size() != 1) {
             why_not = "packformat " + id + " needs exactly one speaker label per channel";
             return none;
@@ -896,27 +975,48 @@ inline std::shared_ptr<adm::Document> build_document(const captured_programme& c
                 const captured_direct_channel& ch = bed.channels[i];
                 const std::string name = bed.name + " " + (ch.labels.empty() ? std::to_string(i + 1) : ch.labels.front());
                 auto channel = adm::AudioChannelFormat::create(adm::AudioChannelFormatName(name), adm::TypeDefinition::DIRECT_SPEAKERS);
-                adm::AudioBlockFormatDirectSpeakers block;
-                for (const auto& label : ch.labels) {
-                    block.add(adm::SpeakerLabel(label));
+                // a static channel is one block without timing; a timed one has
+                // a block per change, each lasting until the next
+                std::vector<captured_direct_block> blocks = ch.blocks;
+                if (blocks.size() <= 1) {
+                    captured_direct_block only;
+                    only.labels = ch.labels;
+                    only.has_position = ch.has_position;
+                    only.azimuth = ch.azimuth;
+                    only.elevation = ch.elevation;
+                    only.distance = ch.distance;
+                    only.bounds = ch.bounds;
+                    blocks = { only };
                 }
-                if (ch.has_position) {
-                    adm::SphericalSpeakerPosition position(adm::Azimuth(static_cast<float>(ch.azimuth)),
-                                                          adm::Elevation(static_cast<float>(ch.elevation)),
-                                                          adm::Distance(static_cast<float>(ch.distance)));
-                    if (ch.bounds.size() >= 4) {
-                        position.set(adm::AzimuthMin(static_cast<float>(ch.bounds[0])));
-                        position.set(adm::AzimuthMax(static_cast<float>(ch.bounds[1])));
-                        position.set(adm::ElevationMin(static_cast<float>(ch.bounds[2])));
-                        position.set(adm::ElevationMax(static_cast<float>(ch.bounds[3])));
+                for (size_t k = 0; k < blocks.size(); ++k) {
+                    const captured_direct_block& c = blocks[k];
+                    adm::AudioBlockFormatDirectSpeakers block;
+                    if (blocks.size() > 1) {
+                        const double next = k + 1 < blocks.size() ? blocks[k + 1].time : length;
+                        block.set(adm::Rtime(to_time(c.time)));
+                        block.set(adm::Duration(to_time(std::max(0.0, next - c.time))));
                     }
-                    if (ch.bounds.size() >= 6) {
-                        position.set(adm::DistanceMin(static_cast<float>(ch.bounds[4])));
-                        position.set(adm::DistanceMax(static_cast<float>(ch.bounds[5])));
+                    for (const auto& label : c.labels) {
+                        block.add(adm::SpeakerLabel(label));
                     }
-                    block.set(position);
+                    if (c.has_position) {
+                        adm::SphericalSpeakerPosition position(adm::Azimuth(static_cast<float>(c.azimuth)),
+                                                              adm::Elevation(static_cast<float>(c.elevation)),
+                                                              adm::Distance(static_cast<float>(c.distance)));
+                        if (c.bounds.size() >= 4) {
+                            position.set(adm::AzimuthMin(static_cast<float>(c.bounds[0])));
+                            position.set(adm::AzimuthMax(static_cast<float>(c.bounds[1])));
+                            position.set(adm::ElevationMin(static_cast<float>(c.bounds[2])));
+                            position.set(adm::ElevationMax(static_cast<float>(c.bounds[3])));
+                        }
+                        if (c.bounds.size() >= 6) {
+                            position.set(adm::DistanceMin(static_cast<float>(c.bounds[4])));
+                            position.set(adm::DistanceMax(static_cast<float>(c.bounds[5])));
+                        }
+                        block.set(position);
+                    }
+                    channel->add(block);
                 }
-                channel->add(block);
                 if (ch.lfe) {
                     channel->set(adm::Frequency(adm::LowPass(120.0f)));
                 }

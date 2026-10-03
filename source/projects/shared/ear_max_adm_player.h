@@ -125,6 +125,7 @@ public:
         m_loaded = false;
         m_items = select_items(m_file, m_programme);
         m_emitted.assign(m_items.objects.size(), k_never);
+        m_emitted_direct.assign(m_items.direct.size(), k_never);
         m_loaded = true;
     }
 
@@ -134,6 +135,7 @@ public:
         m_file = loaded_file();
         m_items = selection();
         m_emitted.clear();
+        m_emitted_direct.clear();
         m_position = 0.0;
     }
 
@@ -207,19 +209,9 @@ public:
         for (size_t i = 0; i < m_items.direct.size(); ++i) {
             const auto& item = m_items.direct[i];
             const int n = static_cast<int>(i + 1);
-            atoms labels{ symbol("setvalue"), n, symbol("speakerlabel") };
-            for (const auto& label : item.labels) {
-                labels.push_back(symbol(label));
+            if (!item.timed()) {
+                send_direct_block(n, item.blocks.front(), out);    // a timed bed's blocks come from emit()
             }
-            out.direct(labels);
-            if (item.has_position) {
-                out.direct(atoms{ symbol("setvalue"), n, symbol("position"), item.azimuth, item.elevation, item.distance });
-            }
-            atoms bounds{ symbol("setvalue"), n, symbol("bounds") };
-            for (const double b : item.bounds) {
-                bounds.push_back(b);
-            }
-            out.direct(bounds);
             out.direct(atoms{ symbol("setvalue"), n, symbol("lfe"), item.lfe ? 1 : 0 });
             out.direct(atoms{ symbol("setvalue"), n, symbol("packformat"), symbol(item.pack_id.empty() ? "none" : item.pack_id) });
         }
@@ -246,6 +238,7 @@ public:
     void reset_emitted()
     {
         std::fill(m_emitted.begin(), m_emitted.end(), k_never);
+        std::fill(m_emitted_direct.begin(), m_emitted_direct.end(), k_never);
     }
 
     /// Emit the blocks active at `time` for every Objects item whose block
@@ -277,6 +270,21 @@ public:
             send_block(static_cast<int>(i + 1), block.state, ramp_seconds, out);
             m_emitted[i] = current;
         }
+        // a timed bed: the block active now, when it changed (a bed keeps
+        // its last block's parameters after it ends; mc.ear.direct~ ramps
+        // the gains over its ramp attribute)
+        for (size_t i = 0; i < m_items.direct.size(); ++i) {
+            const auto& item = m_items.direct[i];
+            if (!item.timed()) {
+                continue;
+            }
+            const int current = direct_block_at(item, time);
+            if (current < 0 || current == m_emitted_direct[i]) {
+                continue;
+            }
+            send_direct_block(static_cast<int>(i + 1), item.blocks[static_cast<size_t>(current)], out);
+            m_emitted_direct[i] = current;
+        }
     }
 
     /// The next block start or end after `time` over all Objects items, or
@@ -291,6 +299,16 @@ public:
                 }
                 if (block.end > time + 1e-6 && block.end < next) {
                     next = block.end;
+                }
+            }
+        }
+        for (const auto& item : m_items.direct) {
+            if (!item.timed()) {
+                continue;
+            }
+            for (const auto& block : item.blocks) {
+                if (block.start > time + 1e-6 && block.start < next) {
+                    next = block.start;
                 }
             }
         }
@@ -329,6 +347,25 @@ private:
     static constexpr int k_never = -1;     ///< nothing emitted yet for the item
     static constexpr int k_silent = -2;    ///< the item was silenced after a block ended
 
+    /// the labels, position and bounds of a DirectSpeakers block for
+    /// mc.ear.direct~
+    static void send_direct_block(int n, const direct_block& block, const message_sinks& out)
+    {
+        atoms labels{ symbol("setvalue"), n, symbol("speakerlabel") };
+        for (const auto& label : block.labels) {
+            labels.push_back(symbol(label));
+        }
+        out.direct(labels);
+        if (block.has_position) {
+            out.direct(atoms{ symbol("setvalue"), n, symbol("position"), block.azimuth, block.elevation, block.distance });
+        }
+        atoms bounds{ symbol("setvalue"), n, symbol("bounds") };
+        for (const double b : block.bounds) {
+            bounds.push_back(b);
+        }
+        out.direct(bounds);
+    }
+
     static void send_block(int n, const object_state& s, double ramp_seconds, const message_sinks& out)
     {
         const symbol setvalue("setvalue");
@@ -358,7 +395,8 @@ private:
     selection m_items;
     bool m_loaded{ false };
     int m_programme{ 0 };
-    std::vector<int> m_emitted;    ///< per Objects item: index of the last emitted block, k_never or k_silent
+    std::vector<int> m_emitted;
+    std::vector<int> m_emitted_direct;    ///< the block last emitted per DirectSpeakers item (timed beds)    ///< per Objects item: index of the last emitted block, k_never or k_silent
     double m_position{ 0.0 };      ///< transport position in seconds
 };
 

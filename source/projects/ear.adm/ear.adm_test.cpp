@@ -489,6 +489,140 @@ SCENARIO("ear.adm captures object messages and writes them as ADM") {
     }
 }
 
+SCENARIO("ear.adm captures a timed bed and plays its blocks back") {
+    ext_main(nullptr);
+
+    GIVEN("an instance capturing one object and a stereo bed whose channels change") {
+        test_wrapper<ear_adm> an_instance;
+        ear_adm& obj = an_instance;
+        obj.chans = 1;
+        obj.directchans = 2;
+        obj.direct(atoms{ symbol("inputlayout"), symbol("0+2+0") });
+        obj.begin_capture_at(1000.0);
+        obj.direct_at(1500.0, atoms{ symbol("setvalue"), 1, symbol("position"), 45.0, 0.0 });
+        obj.direct_at(1500.0, atoms{ symbol("setvalue"), 1, symbol("bounds"), 40.0, 50.0, -5.0, 5.0 });    // same time: one block
+        obj.direct_at(2000.0, atoms{ symbol("setvalue"), 2, symbol("speakerlabel"), symbol("M-045") });
+        obj.direct_at(2500.0, atoms{ symbol("setvalue"), 2, symbol("lfe"), 1 });    // channel-level: no block
+        obj.direct_at(2600.0, atoms{ symbol("setvalue"), 1, symbol("position"), 45.0, 0.0 });    // unchanged: no block
+        obj.direct_at(2700.0, atoms{ symbol("setvalue"), 2, symbol("speakerlabel"), symbol("M-045") });    // unchanged: no block
+        obj.stop();
+
+        THEN("each channel has a block per change, the first at the capture start") {
+            const auto& one = obj.bed().blocks(0);
+            REQUIRE(one.size() == 2);
+            REQUIRE(one[0].time == Approx(0.0));
+            REQUIRE(one[0].azimuth == Approx(30.0));
+            REQUIRE(one[1].time == Approx(0.5));
+            REQUIRE(one[1].azimuth == Approx(45.0));
+            REQUIRE(one[1].bounds == std::vector<double>{ 40.0, 50.0, -5.0, 5.0 });
+            const auto& two = obj.bed().blocks(1);
+            REQUIRE(two.size() == 2);
+            REQUIRE(two[1].time == Approx(1.0));
+            REQUIRE(two[1].labels == std::vector<std::string>{ "M-045" });
+        }
+
+        WHEN("the capture is written and read back") {
+            const std::string audio = write_audio("timed_bed_audio.wav", 3, 48000 * 3);
+            const std::string out = std::string(EARMAX_TEST_OUT_DIR) + "/timed_bed.wav";
+            std::remove(out.c_str());
+            obj.write(atoms{ symbol(out), symbol(audio) });
+            REQUIRE(contains(messages(obj, k_info), "written " + out + " 3 144000"));
+
+            test_wrapper<ear_adm> another_instance;
+            ear_adm& reader = another_instance;
+            reader.read(atoms{ symbol(out) });
+            REQUIRE(reader.loaded());
+            const auto& items = reader.items();
+
+            THEN("the bed has its own channel formats with timed blocks") {
+                REQUIRE(items.direct.size() == 2);
+                REQUIRE(items.direct[0].timed());
+                REQUIRE(items.direct[0].pack_id != "AP_00010002");    // timed: the common definitions cannot carry it
+                REQUIRE(items.direct[0].blocks.size() == 2);
+                REQUIRE(items.direct[0].blocks[0].start == Approx(0.0));
+                REQUIRE(items.direct[0].blocks[0].end == Approx(0.5));
+                REQUIRE(items.direct[0].blocks[1].start == Approx(0.5));
+                REQUIRE(items.direct[0].blocks[1].end == Approx(3.0));
+                REQUIRE(items.direct[0].blocks[1].azimuth == Approx(45.0));
+                REQUIRE(items.direct[0].blocks[1].bounds == std::vector<double>{ 40.0, 50.0, -5.0, 5.0 });
+                REQUIRE(items.direct[0].labels == std::vector<std::string>{ "M+030" });    // the first block's
+                REQUIRE(items.direct[1].blocks[1].labels == std::vector<std::string>{ "M-045" });
+                REQUIRE(items.direct[1].lfe);
+            }
+
+            THEN("the first blocks are sent when the file is read, with the channel-level parameters") {
+                const auto direct = messages(reader, k_direct);
+                REQUIRE(contains(direct, "setvalue 1 speakerlabel M+030"));
+                REQUIRE(contains(direct, "setvalue 1 position 30 0 1"));
+                REQUIRE(contains(direct, "setvalue 2 lfe 1"));
+                REQUIRE(count_prefix(direct, "setvalue 1 position 45") == 0);
+            }
+
+            THEN("the transport emits the bed's blocks at their times") {
+                c74::max::object_getoutput(reader, k_direct)->clear();
+                reader.time(atoms{ 600.0 });
+                auto direct = messages(reader, k_direct);
+                REQUIRE(contains(direct, "setvalue 1 position 45 0 1"));
+                REQUIRE(contains(direct, "setvalue 1 bounds 40 50 -5 5"));
+                REQUIRE(count_prefix(direct, "setvalue 2 speakerlabel") == 0);    // channel 2 changes later
+                c74::max::object_getoutput(reader, k_direct)->clear();
+                reader.step();    // the next boundary is the bed's change at 1 s
+                REQUIRE(reader.position() == Approx(1.0));
+                direct = messages(reader, k_direct);
+                REQUIRE(contains(direct, "setvalue 2 speakerlabel M-045"));
+                c74::max::object_getoutput(reader, k_direct)->clear();
+                reader.time(atoms{ 0.0 });
+                REQUIRE(contains(messages(reader, k_direct), "setvalue 1 position 30 0 1"));
+            }
+        }
+    }
+}
+
+SCENARIO("ear.adm keeps a bed static when its metadata is only repeated") {
+    ext_main(nullptr);
+
+    GIVEN("an instance capturing a bed whose layout and parameters are sent again unchanged") {
+        test_wrapper<ear_adm> an_instance;
+        ear_adm& obj = an_instance;
+        obj.directchans = 2;
+        obj.direct(atoms{ symbol("inputlayout"), symbol("0+2+0") });
+        obj.begin_capture_at(1000.0);
+        obj.direct_at(1500.0, atoms{ symbol("inputlayout"), symbol("0+2+0") });
+        obj.direct_at(2000.0, atoms{ symbol("setvalue"), 1, symbol("speakerlabel"), symbol("M+030") });
+        obj.direct_at(2500.0, atoms{ symbol("applyvalues"), symbol("azimuth"), 30.0, -30.0 });
+        obj.stop();
+        THEN("each channel keeps its single block and the bed still references the layout") {
+            REQUIRE(obj.bed().blocks(0).size() == 1);
+            REQUIRE(obj.bed().blocks(1).size() == 1);
+            const auto bed = obj.bed().bed();
+            REQUIRE(!bed.channels[0].timed());
+            REQUIRE(bed.channels[0].pack_id == "AP_00010002");
+        }
+    }
+}
+
+SCENARIO("ear.adm seeds a bed channel added while capturing") {
+    ext_main(nullptr);
+
+    GIVEN("an instance capturing a bed that grows by a channel") {
+        test_wrapper<ear_adm> an_instance;
+        ear_adm& obj = an_instance;
+        obj.directchans = 2;
+        obj.begin_capture_at(1000.0);
+        obj.directchans = 3;
+        obj.direct_at(3000.0, atoms{ symbol("setvalue"), 3, symbol("speakerlabel"), symbol("M+000") });
+        obj.stop();
+        THEN("the new channel starts with its state at time 0 and the change is its second block") {
+            const auto& three = obj.bed().blocks(2);
+            REQUIRE(three.size() == 2);
+            REQUIRE(three[0].time == Approx(0.0));
+            REQUIRE(three[0].labels.empty());
+            REQUIRE(three[1].time == Approx(2.0));
+            REQUIRE(three[1].labels == std::vector<std::string>{ "M+000" });
+        }
+    }
+}
+
 SCENARIO("ear.adm writes a DirectSpeakers bed and an HOA scene after the objects") {
     ext_main(nullptr);
 

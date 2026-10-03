@@ -358,6 +358,34 @@ SCENARIO("mc.ear.record~ records a bed and a scene after the objects") {
             }
         }
 
+        WHEN("a bed channel changes while recording") {
+            const std::string path = out_path("recorded_timed_bed.wav");
+            obj.start(atoms{ symbol(path) });
+            mc_audio_io io(7, k_block);
+            for (int v = 0; v < 10; ++v) {
+                obj(io.input(), io.output());
+            }
+            obj.direct(atoms{ symbol("setvalue"), 1, symbol("position"), 45.0, 10.0 });    // at 640 frames
+            for (int v = 0; v < 10; ++v) {
+                obj(io.input(), io.output());
+            }
+            obj.direct(atoms{ symbol("setvalue"), 2, symbol("lfe"), 1 });    // channel-level: no block
+            finish(obj);
+            THEN("the change is a timed block and the bed gets its own channel formats") {
+                const auto items = admio::select_items(admio::load_file(path));
+                REQUIRE(items.direct.size() == 2);
+                REQUIRE(items.direct[0].timed());
+                REQUIRE(items.direct[0].blocks.size() == 2);
+                REQUIRE(items.direct[0].blocks[1].start == Approx(640.0 / k_sr).margin(1e-6));
+                REQUIRE(items.direct[0].blocks[1].azimuth == Approx(45.0));
+                REQUIRE(items.direct[0].blocks[1].elevation == Approx(10.0));
+                REQUIRE(items.direct[0].pack_id != "AP_00010002");
+                REQUIRE(!items.direct[1].timed());
+                REQUIRE(items.direct[1].lfe);
+                REQUIRE(items.hoa.size() == 1);
+            }
+        }
+
         WHEN("the scene is removed while recording") {
             const std::string path = out_path("recorded_bed_change.wav");
             obj.start(atoms{ symbol(path) });

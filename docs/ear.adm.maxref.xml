@@ -43,7 +43,7 @@
 		</method>
 		<method name='direct'>
 			<digest>Metadata of the bed written after the objects (see the directchans attribute), in the mc.ear.direct~ format: 'direct setvalue N speakerlabel M+030' (N is 1-based; 0 sets all channels), 'direct setvalue N position az el [dist]', azimuth, elevation, distance, bounds, lfe, packformat, 'direct applyvalues parameter v1 v2 ...', 'direct inputlayout 0+5+0' (labels, positions and LFE after a BS.2051 layout, written as a reference to the common definitions when the layout has one), 'direct name symbol' (the bed's audioObject name), or 'direct parameter values' for all channels</digest>
-			<description>Metadata of the bed written after the objects (see the directchans attribute), in the mc.ear.direct~ format: 'direct setvalue N speakerlabel M+030' (N is 1-based; 0 sets all channels), 'direct setvalue N position az el [dist]', azimuth, elevation, distance, bounds, lfe, packformat, 'direct applyvalues parameter v1 v2 ...', 'direct inputlayout 0+5+0' (labels, positions and LFE after a BS.2051 layout, written as a reference to the common definitions when the layout has one), 'direct name symbol' (the bed's audioObject name), or 'direct parameter values' for all channels. The 'tracks' message of a reading ear.adm or mc.ear.play~ is ignored, so their direct outlet can be fed to this message.</description>
+			<description>Metadata of the bed written after the objects (see the directchans attribute), in the mc.ear.direct~ format: 'direct setvalue N speakerlabel M+030' (N is 1-based; 0 sets all channels), 'direct setvalue N position az el [dist]', azimuth, elevation, distance, bounds, lfe, packformat, 'direct applyvalues parameter v1 v2 ...', 'direct inputlayout 0+5+0' (labels, positions and LFE after a BS.2051 layout, written as a reference to the common definitions when the layout has one), 'direct name symbol' (the bed's audioObject name), or 'direct parameter values' for all channels. While 'record' runs, a change of a channel's labels, position or bounds is captured as a timed block (such a bed is written with its own channel formats). The 'tracks' message of a reading ear.adm or mc.ear.play~ is ignored, so their direct outlet can be fed to this message.</description>
 		</method>
 		<method name='directchans'>
 			<arglist>
@@ -105,8 +105,8 @@
 			<description>Read an ADM (BW64) file: 'read path'. Reports the file, its programmes and rendering items on the info outlet, sends the track lists and static metadata to the renderer outlets and emits the object metadata for time 0.</description>
 		</method>
 		<method name='record'>
-			<digest>Start capturing the object messages sent to this object (setvalue, applyvalues, parameters, lists), timestamped from now; the current state of every object becomes its first block</digest>
-			<description>Start capturing the object messages sent to this object (setvalue, applyvalues, parameters, lists), timestamped from now; the current state of every object becomes its first block. Stop with 'stop'.</description>
+			<digest>Start capturing the object messages sent to this object (setvalue, applyvalues, parameters, lists) and the bed's 'direct' changes, timestamped from now; the current state of every object and bed channel becomes its first block</digest>
+			<description>Start capturing the object messages sent to this object (setvalue, applyvalues, parameters, lists) and the bed's 'direct' changes, timestamped from now; the current state of every object and bed channel becomes its first block. Stop with 'stop'.</description>
 		</method>
 		<method name='seek'>
 			<digest>Move the transport to a position in milliseconds ('seek 0' rewinds) and emit the metadata there</digest>

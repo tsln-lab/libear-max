@@ -199,6 +199,7 @@ public:
             }
             if (m_capture.capturing()) {
                 m_capture.end();
+                m_bed.end();
                 out_info.send("captured", static_cast<int>(m_capture.size()), m_capture.last_time() * 1000.0);
             }
             return {};
@@ -228,8 +229,9 @@ public:
     // ------------------------------------------------------------------
 
     message<> record{ this, "record",
-        "Start capturing the object messages sent to this object (setvalue, applyvalues, parameters, lists), "
-        "timestamped from now; the current state of every object becomes its first block. Stop with 'stop'.",
+        "Start capturing the object messages sent to this object (setvalue, applyvalues, parameters, lists) and the "
+        "bed's 'direct' changes, timestamped from now; the current state of every object and bed channel becomes its "
+        "first block. Stop with 'stop'.",
         MIN_FUNCTION {
             begin_capture(now_ms());
             return {};
@@ -248,11 +250,12 @@ public:
         "[dist]', azimuth, elevation, distance, bounds, lfe, packformat, 'direct applyvalues parameter v1 v2 ...', "
         "'direct inputlayout 0+5+0' (labels, positions and LFE after a BS.2051 layout, written as a reference to the "
         "common definitions when the layout has one), 'direct name symbol' (the bed's audioObject name), or 'direct "
-        "parameter values' for all channels. The 'tracks' message of a reading ear.adm or mc.ear.play~ is ignored, "
-        "so their direct outlet can be fed to this message.",
+        "parameter values' for all channels. While 'record' runs, a change of a channel's labels, position or bounds "
+        "is captured as a timed block (such a bed is written with its own channel formats). The 'tracks' message of a "
+        "reading ear.adm or mc.ear.play~ is ignored, so their direct outlet can be fed to this message.",
         MIN_FUNCTION {
             std::string error;
-            if (!admio::apply_direct_message(m_bed, args, error)) {
+            if (!admio::apply_direct_message(m_bed, args, capture_time(), error)) {
                 cerr << error << endl;
             }
             return {};
@@ -478,6 +481,14 @@ public:
         begin_capture(scheduler_ms);
     }
 
+    /// send a 'direct' message as if at a scheduler time (tests)
+    void direct_at(double scheduler_ms, const atoms& args)
+    {
+        m_capture_time_override = scheduler_ms;
+        direct(args);
+        m_capture_time_override = -1.0;
+    }
+
     const std::vector<admio::captured_block>& captured(size_t i) const
     {
         return m_capture.blocks(i);
@@ -653,6 +664,7 @@ private:
     {
         m_capture_origin = scheduler_ms;
         m_capture.begin();
+        m_bed.begin();
     }
 
     /// the time of a change on the capture's clock: seconds since 'record'

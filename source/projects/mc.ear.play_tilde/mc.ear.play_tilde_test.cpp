@@ -210,7 +210,99 @@ double rms(const std::vector<double>& samples, size_t from)
     return samples.size() > from ? std::sqrt(sum / static_cast<double>(samples.size() - from)) : 0.0;
 }
 
+/// a file with one static object and a one-channel bed whose label and
+/// position change at 20 ms
+std::string write_timed_bed_fixture()
+{
+    const std::string audio = std::string(EARMAX_TEST_OUT_DIR) + "/timed_bed_audio.wav";
+    const std::string out = std::string(EARMAX_TEST_OUT_DIR) + "/timed_bed_fixture.wav";
+    {
+        auto writer = bw64::writeFile(audio, 2, 48000, 24);
+        std::vector<float> interleaved(4800 * 2, 0.25f);
+        writer->write(interleaved.data(), 4800);
+    }
+    admio::captured_programme captured;
+    captured.name = "timed bed";
+    admio::captured_object object;
+    object.name = "still";
+    object.blocks.push_back({ 0.0, 0.0, admio::object_state() });
+    captured.objects.push_back(object);
+    admio::captured_direct_channel ch;
+    ch.labels = { "M+030" };
+    ch.has_position = true;
+    ch.azimuth = 30.0;
+    admio::captured_direct_block first;
+    first.time = 0.0;
+    first.labels = { "M+030" };
+    first.has_position = true;
+    first.azimuth = 30.0;
+    admio::captured_direct_block second = first;
+    second.time = 0.02;
+    second.labels = { "M-030" };
+    second.azimuth = -30.0;
+    ch.blocks = { first, second };
+    captured.bed.channels.push_back(ch);
+    std::vector<bw64::AudioId> chna_ids;
+    std::vector<std::string> warnings;
+    auto doc = admio::build_document(captured, 0.1, chna_ids, warnings);
+    std::remove(out.c_str());
+    admio::write_file(out, audio, doc, chna_ids);
+    return out;
+}
+
 } // namespace
+
+SCENARIO("mc.ear.play~ emits a timed bed's blocks from the audio clock") {
+    ext_main(nullptr);
+
+    GIVEN("a file whose bed channel changes at 20 ms") {
+        const std::string fixture = write_timed_bed_fixture();
+        test_wrapper<mc_ear_play_tilde> an_instance;
+        mc_ear_play_tilde& obj = an_instance;
+        obj.open(atoms{ symbol(fixture) });
+        REQUIRE(obj.loaded());
+        REQUIRE(obj.items().direct.size() == 1);
+        REQUIRE(obj.items().direct[0].timed());
+
+        THEN("the first block is sent when the file is opened, with the channel-level parameters") {
+            const auto direct = messages(obj, k_direct);
+            REQUIRE(contains(direct, "setvalue 1 speakerlabel M+030"));
+            REQUIRE(contains(direct, "setvalue 1 position 30 0 1"));
+            REQUIRE(contains(direct, "setvalue 1 lfe 0"));
+            REQUIRE(count_prefix(direct, "setvalue 1 speakerlabel M-030") == 0);
+        }
+
+        const long channels = start_dsp(obj);
+        mc_audio_io io(static_cast<size_t>(channels), k_block);
+
+        WHEN("the file plays") {
+            obj.start();
+            REQUIRE(obj.wait_ready(k_ready_timeout_ms));
+            clear_outputs(obj);
+            int emitted_after = -1;
+            for (int vector = 1; vector <= 20; ++vector) {
+                obj(io.input(), io.output());
+                obj.flush();
+                if (emitted_after < 0 && contains(messages(obj, k_direct), "setvalue 1 speakerlabel M-030")) {
+                    emitted_after = vector;
+                }
+            }
+            THEN("the second block is emitted one vector ahead of frame 960") {
+                REQUIRE(emitted_after == 14);
+                REQUIRE(contains(messages(obj, k_direct), "setvalue 1 position -30 0 1"));
+            }
+        }
+
+        WHEN("the transport is moved past the change") {
+            obj.start();
+            clear_outputs(obj);
+            obj.seek(atoms{ 50.0 });
+            THEN("the block active there is sent at once") {
+                REQUIRE(contains(messages(obj, k_direct), "setvalue 1 speakerlabel M-030"));
+            }
+        }
+    }
+}
 
 SCENARIO("the resampler converts interleaved frames between rates") {
     GIVEN("a resampler at the same rate") {
