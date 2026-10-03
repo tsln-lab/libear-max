@@ -21,8 +21,7 @@
 /// with 'setvalue N ramp <interpolation ms>' followed by its parameters
 /// reproduces the reference behaviour.
 ///
-/// Known limitations of this phase: zoneExclusion is not supported by libadm
-/// 0.14 and is therefore not read or written; audioObject importance and
+/// Known limitations of this phase: audioObject importance and
 /// complementary object groups are not interpreted (every object is
 /// rendered); muted objects, silent tracks and unsupported types are skipped
 /// with a warning; nested audioObjects contribute their innermost
@@ -98,6 +97,15 @@ inline std::string upper(std::string s)
 
 /// The parameters of one audioBlockFormatObjects, in the terms of our
 /// renderers (object_metadata in ear_max.h).
+struct exclusion_zone {
+    bool cartesian{ false };
+    /// the bounds in the order of the renderers' 'zone' message: minAz maxAz
+    /// minEl maxEl for a polar zone, minX maxX minY maxY minZ maxZ for a
+    /// Cartesian one
+    std::vector<double> bounds;
+    std::string label;    ///< the zone element's value in the file, if any (the 'zone' messages carry none)
+};
+
 struct object_state {
     bool cartesian{ false };
     double azimuth{ 0.0 };
@@ -118,6 +126,7 @@ struct object_state {
     bool screenref{ false };
     std::string screenedgelock_h{ "none" };
     std::string screenedgelock_v{ "none" };
+    std::vector<exclusion_zone> zones;    ///< the block's zoneExclusion, in file order
 };
 
 struct object_block {
@@ -308,6 +317,23 @@ inline object_state state_of(const adm::AudioBlockFormatObjects& b)
         }
     }
     s.screenref = b.get<adm::ScreenRef>().get();
+    for (const adm::Zone& zone : b.get<adm::ZoneExclusion>().get<adm::Zones>()) {
+        exclusion_zone z;
+        if (adm::isCartesian(zone)) {
+            const auto c = boost::get<adm::CartesianZone>(zone);
+            z.cartesian = true;
+            z.bounds = { c.get<adm::MinX>().get(), c.get<adm::MaxX>().get(), c.get<adm::MinY>().get(),
+                         c.get<adm::MaxY>().get(), c.get<adm::MinZ>().get(), c.get<adm::MaxZ>().get() };
+            if (c.has<adm::ZoneLabel>()) z.label = c.get<adm::ZoneLabel>().get();
+        }
+        else {
+            const auto p = boost::get<adm::PolarZone>(zone);
+            z.bounds = { p.get<adm::MinAzimuth>().get(), p.get<adm::MaxAzimuth>().get(),
+                         p.get<adm::MinElevation>().get(), p.get<adm::MaxElevation>().get() };
+            if (p.has<adm::ZoneLabel>()) z.label = p.get<adm::ZoneLabel>().get();
+        }
+        s.zones.push_back(std::move(z));
+    }
     return s;
 }
 
@@ -785,6 +811,25 @@ inline void add_object_blocks(adm::SimpleObjectHolder& holder, const captured_ob
                     block.set(adm::ObjectDivergence(adm::Divergence(static_cast<float>(s.divergence)),
                                                     adm::AzimuthRange(static_cast<float>(s.divergence_range))));
                 }
+            }
+            if (!s.zones.empty()) {
+                adm::ZoneExclusion exclusion;
+                for (const exclusion_zone& z : s.zones) {
+                    const auto f = [&z](size_t i) { return static_cast<float>(z.bounds[i]); };
+                    if (z.cartesian) {
+                        adm::CartesianZone zone(adm::MinX(f(0)), adm::MaxX(f(1)), adm::MinY(f(2)), adm::MaxY(f(3)),
+                                                adm::MinZ(f(4)), adm::MaxZ(f(5)));
+                        if (!z.label.empty()) zone.set(adm::ZoneLabel(z.label));
+                        exclusion.add(adm::Zone(zone));
+                    }
+                    else {
+                        adm::PolarZone zone(adm::MinElevation(f(2)), adm::MaxElevation(f(3)), adm::MinAzimuth(f(0)),
+                                            adm::MaxAzimuth(f(1)));
+                        if (!z.label.empty()) zone.set(adm::ZoneLabel(z.label));
+                        exclusion.add(adm::Zone(zone));
+                    }
+                }
+                block.set(exclusion);
             }
             // the renderer ramps over c.ramp seconds; a ramp of 0 is a jump
             if (c.ramp > 0.0) {
