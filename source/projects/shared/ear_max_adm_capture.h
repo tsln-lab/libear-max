@@ -491,9 +491,13 @@ public:
             captured_direct_channel ch;
             ch.labels = meta.dstm.speakerLabels;
             ch.has_position = true;
+            ch.cartesian = meta.cartesian;
             ch.azimuth = meta.position.azimuth;
             ch.elevation = meta.position.elevation;
             ch.distance = meta.position.distance;
+            ch.x = meta.cartesian_position.X;
+            ch.y = meta.cartesian_position.Y;
+            ch.z = meta.cartesian_position.Z;
             ch.bounds = meta.bounds;
             ch.lfe = static_cast<bool>(meta.dstm.channelFrequency.lowPass);
             ch.pack_id = meta.dstm.audioPackFormatID ? *meta.dstm.audioPackFormatID : std::string();
@@ -512,17 +516,22 @@ private:
         b.time = time;
         b.labels = meta.dstm.speakerLabels;
         b.has_position = true;
+        b.cartesian = meta.cartesian;
         b.azimuth = meta.position.azimuth;
         b.elevation = meta.position.elevation;
         b.distance = meta.position.distance;
+        b.x = meta.cartesian_position.X;
+        b.y = meta.cartesian_position.Y;
+        b.z = meta.cartesian_position.Z;
         b.bounds = meta.bounds;
         return b;
     }
 
     static bool same_values(const captured_direct_block& a, const captured_direct_block& b)
     {
-        return a.labels == b.labels && a.has_position == b.has_position && a.azimuth == b.azimuth && a.elevation == b.elevation
-               && a.distance == b.distance && a.bounds == b.bounds;
+        return a.labels == b.labels && a.has_position == b.has_position && a.cartesian == b.cartesian && a.azimuth == b.azimuth
+               && a.elevation == b.elevation && a.distance == b.distance && a.x == b.x && a.y == b.y && a.z == b.z
+               && a.bounds == b.bounds;
     }
 
     void record_change(size_t i, double time)
