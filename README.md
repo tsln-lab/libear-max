@@ -220,9 +220,12 @@ outlet it belongs to: `direct setvalue 4 speakerlabel LFE1`,
 BS.2051 layout, exactly as `mc.ear.direct~`'s `inputlayout`), `direct name
 music`; `hoa order 1`, `hoa normalization N3D`, `hoa name ambience`. A bed
 whose channels name a common definitions layout (`inputlayout` sets the
-`packformat`, as does a file read by `ear.adm`) is written as a reference
-to that layout and its channels, as the EAR's own tools do; any other bed
-gets its own channel formats with the labels, positions and bounds given.
+`packformat`, as does a file read by `ear.adm`) and keeps its channels at
+their nominal positions, without bounds, is written as a reference to that
+layout and its channels, as the EAR's own tools do; any other bed (a label
+or position edited after `inputlayout`, bounds or Cartesian coordinates
+given) gets its own channel formats with the labels, positions and bounds
+given.
 A bed can change over time too: while `record` runs (or `mc.ear.record~`
 records), a change of a channel's labels, position or bounds becomes a
 timed `audioBlockFormat` at that moment, and such a bed is written with its

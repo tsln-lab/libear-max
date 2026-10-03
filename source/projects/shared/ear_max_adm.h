@@ -37,10 +37,13 @@
 #include "adm/utilities/object_creation.hpp"
 #include "adm/write.hpp"
 #include "bw64/bw64.hpp"
+#include "ear/bs2051.hpp"
+#include "ear/layout.hpp"
 
 #include "ear_max_hoa.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <fstream>
@@ -949,11 +952,33 @@ inline void add_object_blocks(adm::SimpleObjectHolder& holder, const captured_ob
     }
 }
 
+/// The nominal position of a common definitions channel: what the file
+/// reconstructs for it, and what 'inputlayout' sets.
+struct common_channel {
+    adm::AudioTrackFormatId track_id;    ///< AT_<channel id>_01 in the common definitions
+    std::vector<std::array<double, 3>> nominal;    ///< the positions (azimuth, elevation, distance) the channel stands for
+};
+
+/// Whether a polar position is one of the nominal ones.
+inline bool nominal_position(const common_channel& channel, double azimuth, double elevation, double distance)
+{
+    const double tolerance = 1e-6;
+    for (const auto& p : channel.nominal) {
+        if (std::abs(p[0] - azimuth) <= tolerance && std::abs(p[1] - elevation) <= tolerance
+            && std::abs(p[2] - distance) <= tolerance) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /// A bed whose channels all name the same common definitions pack and
-/// carry one label each that names a distinct channel of that pack: it is
-/// written as a reference to that pack and its channels (as the EAR's
-/// tools do), otherwise as custom channel formats. Returns the pack id, or
-/// empty with `why_not` set when the pack cannot be used.
+/// carry one label each that names a distinct channel of that pack, at its
+/// nominal position and without bounds: it is written as a reference to
+/// that pack and its channels (as the EAR's tools do), otherwise as custom
+/// channel formats, so that positions and bounds edited after 'inputlayout'
+/// are kept. Returns the pack id, or empty with `why_not` set when the
+/// pack cannot be used.
 inline adm::AudioPackFormatId common_bed_pack(const captured_bed& bed, std::vector<adm::AudioTrackFormatId>& track_ids,
                                               std::vector<std::string>& labels, std::string& why_not)
 {
@@ -976,9 +1001,27 @@ inline adm::AudioPackFormatId common_bed_pack(const captured_bed& bed, std::vect
         why_not = "packformat " + id + " is not a common definitions layout";
         return none;
     }
-    // the pack's channels by nominal label, with the track format of each
-    // (AT_<channel id>_01 in the common definitions)
-    std::map<std::string, adm::AudioTrackFormatId> track_of_label;
+    // the layout the pack stands for, when libear knows it: 'inputlayout'
+    // sets its nominal positions, which differ from the common definitions'
+    // for the LFE
+    std::map<std::string, std::array<double, 3>> layout_position;
+    for (const auto& entry : adm::audioPackFormatLookupTable()) {
+        if (entry.second != pack_id) {
+            continue;
+        }
+        try {
+            const ear::Layout layout = ear::getLayout(entry.first);
+            for (const auto& channel : layout.channels()) {
+                const auto pos = channel.polarPositionNominal();
+                layout_position[nominal_label(channel.name())] = { pos.azimuth, pos.elevation, pos.distance };
+            }
+        }
+        catch (const std::exception&) {
+        }
+        break;
+    }
+    // the pack's channels by nominal label
+    std::map<std::string, common_channel> channel_of_label;
     for (const auto& cf : pack->getReferences<adm::AudioChannelFormat>()) {
         std::string channel_id = adm::formatId(cf->get<adm::AudioChannelFormatId>());    // AC_0001xxxx
         channel_id.replace(0, 3, "AT_");
@@ -993,8 +1036,21 @@ inline adm::AudioPackFormatId common_bed_pack(const captured_bed& bed, std::vect
             continue;
         }
         for (const auto& b : cf->getElements<adm::AudioBlockFormatDirectSpeakers>()) {
+            common_channel channel;
+            channel.track_id = track_id;
+            if (b.has<adm::SphericalSpeakerPosition>()) {
+                const auto sp = b.get<adm::SphericalSpeakerPosition>();
+                channel.nominal.push_back({ static_cast<double>(sp.get<adm::Azimuth>().get()),
+                                            static_cast<double>(sp.get<adm::Elevation>().get()),
+                                            sp.has<adm::Distance>() ? static_cast<double>(sp.get<adm::Distance>().get()) : 1.0 });
+            }
             for (const auto& label : b.get<adm::SpeakerLabels>()) {
-                track_of_label.emplace(nominal_label(label.get()), track_id);
+                const std::string name = nominal_label(label.get());
+                const auto layout = layout_position.find(name);
+                if (layout != layout_position.end()) {
+                    channel.nominal.push_back(layout->second);
+                }
+                channel_of_label.emplace(name, channel);
             }
             break;
         }
@@ -1014,12 +1070,26 @@ inline adm::AudioPackFormatId common_bed_pack(const captured_bed& bed, std::vect
             return none;
         }
         const std::string label = nominal_label(ch.labels.front());
-        const auto it = track_of_label.find(label);
-        if (it == track_of_label.end() || !seen.insert(label).second) {
+        const auto it = channel_of_label.find(label);
+        if (it == channel_of_label.end() || !seen.insert(label).second) {
             why_not = "packformat " + id + ": speaker label " + ch.labels.front() + " is not a distinct channel of that layout";
             return none;
         }
-        track_ids.push_back(it->second);
+        if (ch.cartesian) {
+            why_not = "packformat " + id + ": " + ch.labels.front() + " is given in Cartesian coordinates (the layout's channels are polar)";
+            return none;
+        }
+        if (!ch.bounds.empty()) {
+            why_not = "packformat " + id + ": " + ch.labels.front() + " has position bounds (the layout's channels have none)";
+            return none;
+        }
+        if (ch.has_position && !nominal_position(it->second, ch.azimuth, ch.elevation, ch.distance)) {
+            std::ostringstream pos;
+            pos << ch.azimuth << " " << ch.elevation << " " << ch.distance;
+            why_not = "packformat " + id + ": " + ch.labels.front() + " is not at its nominal position (" + pos.str() + ")";
+            return none;
+        }
+        track_ids.push_back(it->second.track_id);
         labels.push_back(label);
     }
     return pack_id;

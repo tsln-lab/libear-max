@@ -1016,6 +1016,71 @@ SCENARIO("ear.adm writes a DirectSpeakers bed and an HOA scene after the objects
             }
         }
 
+        WHEN("a layout channel is moved after inputlayout") {
+            obj.directchans = 2;
+            obj.direct(atoms{ symbol("inputlayout"), symbol("0+2+0") });
+            obj.direct(atoms{ symbol("setvalue"), 2, symbol("position"), -45.0, 10.0, 1.0 });
+            obj.hoa(atoms{ symbol("order"), -1 });
+            const std::string audio = write_audio("bed_moved_audio.wav", 3, 4800);
+            const std::string out = std::string(EARMAX_TEST_OUT_DIR) + "/bed_moved.wav";
+            std::remove(out.c_str());
+            obj.write(atoms{ symbol(out), symbol(audio) });
+            THEN("the bed is written with its own channel formats, keeping the position") {
+                const auto items = admio::select_items(admio::load_file(out));
+                REQUIRE(items.direct.size() == 2);
+                REQUIRE(items.direct[1].labels == std::vector<std::string>{ "M-030" });
+                REQUIRE(items.direct[1].pack_id != "AP_00010002");
+                REQUIRE(items.direct[1].pack_id.rfind("AP_0001", 0) == 0);
+                REQUIRE(items.direct[1].azimuth == Approx(-45.0));
+                REQUIRE(items.direct[1].elevation == Approx(10.0));
+                REQUIRE(items.direct[0].azimuth == Approx(30.0));
+            }
+        }
+
+        WHEN("a layout channel is given bounds or Cartesian coordinates after inputlayout") {
+            obj.directchans = 2;
+            obj.direct(atoms{ symbol("inputlayout"), symbol("0+2+0") });
+            obj.direct(atoms{ symbol("setvalue"), 1, symbol("bounds"), 20.0, 40.0, -5.0, 5.0 });
+            obj.direct(atoms{ symbol("setvalue"), 2, symbol("cartesian"), 1 });
+            obj.direct(atoms{ symbol("setvalue"), 2, symbol("position"), 1.0, 1.0, 0.0 });
+            obj.hoa(atoms{ symbol("order"), -1 });
+            const std::string audio = write_audio("bed_edited_audio.wav", 3, 4800);
+            const std::string out = std::string(EARMAX_TEST_OUT_DIR) + "/bed_edited.wav";
+            std::remove(out.c_str());
+            obj.write(atoms{ symbol(out), symbol(audio) });
+            THEN("the bed is written with its own channel formats, keeping the bounds and coordinates") {
+                const auto items = admio::select_items(admio::load_file(out));
+                REQUIRE(items.direct.size() == 2);
+                REQUIRE(items.direct[0].pack_id != "AP_00010002");
+                REQUIRE(items.direct[0].pack_id.rfind("AP_0001", 0) == 0);
+                REQUIRE(items.direct[0].labels == std::vector<std::string>{ "M+030" });
+                REQUIRE(items.direct[0].bounds == std::vector<double>{ 20.0, 40.0, -5.0, 5.0 });
+                REQUIRE(!items.direct[0].cartesian);
+                REQUIRE(items.direct[1].labels == std::vector<std::string>{ "M-030" });
+                REQUIRE(items.direct[1].cartesian);
+                REQUIRE(items.direct[1].x == Approx(1.0));
+                REQUIRE(items.direct[1].y == Approx(1.0));
+                REQUIRE(items.direct[1].z == Approx(0.0));
+            }
+        }
+
+        WHEN("a layout channel is moved and then put back after inputlayout") {
+            obj.directchans = 2;
+            obj.direct(atoms{ symbol("inputlayout"), symbol("0+2+0") });
+            obj.direct(atoms{ symbol("setvalue"), 2, symbol("azimuth"), -45.0 });
+            obj.direct(atoms{ symbol("setvalue"), 2, symbol("azimuth"), -30.0 });
+            obj.hoa(atoms{ symbol("order"), -1 });
+            const std::string audio = write_audio("bed_restored_audio.wav", 3, 4800);
+            const std::string out = std::string(EARMAX_TEST_OUT_DIR) + "/bed_restored.wav";
+            std::remove(out.c_str());
+            obj.write(atoms{ symbol(out), symbol(audio) });
+            THEN("the bed still references the common definitions layout") {
+                const auto items = admio::select_items(admio::load_file(out));
+                REQUIRE(items.direct.size() == 2);
+                REQUIRE(items.direct[1].pack_id == "AP_00010002");
+            }
+        }
+
         WHEN("invalid bed and scene messages are sent") {
             obj.direct(atoms{ symbol("setvalue"), 9, symbol("lfe"), 1 });
             obj.direct(atoms{ symbol("inputlayout"), symbol("9+10+3") });    // more channels than the bed has
