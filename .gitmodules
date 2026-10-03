@@ -8,7 +8,7 @@
 [submodule "source/libadm"]
 	path = source/libadm
 	url = https://github.com/tsln-lab/libadm.git
-	branch = zone-exclusion
+	branch = direct-speakers-cartesian
 [submodule "source/libbw64"]
 	path = source/libbw64
 	url = https://github.com/ebu/libbw64.git

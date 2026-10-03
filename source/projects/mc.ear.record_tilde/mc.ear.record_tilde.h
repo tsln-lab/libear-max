@@ -59,6 +59,7 @@ private:
     std::string m_path;                 // the file to write, from 'open' or 'start'
     size_t m_recorded_channels{ 0 };    // channels of the file being recorded (chans at 'start')
     double m_samplerate{ 48000.0 };
+    admio::adm_profile m_profile{ admio::adm_profile::ebu };
     long m_vector{ 64 };
     long m_in_channels{ 0 };            // channels of the multichannel input, from Max
     long m_reported_overflow{ -1 };
@@ -123,6 +124,21 @@ public:
 
     attribute<symbol> programmename{ this, "programmename", "libear-max",
         description{ "Name of the audioProgramme written." } };
+
+    attribute<symbol> profile{ this, "profile", "ebu",
+        description{ "Shape of the ADM recorded: 'ebu' (BS.2076 as libadm writes it) or 'dolby' (the Dolby Atmos Master ADM "
+                     "Profile: the bed with Dolby's channel formats, labels and Cartesian positions, the objects with Cartesian "
+                     "blocks, the profile's names, ids and timing; what the profile has no place for, such as an HOA scene, is left "
+                     "out with a warning)." },
+        setter{ MIN_FUNCTION {
+            admio::adm_profile p;
+            if (!admio::parse_profile(std::string(args[0]), p)) {
+                cerr << "profile must be ebu or dolby" << endl;
+                return { symbol(admio::profile_name(m_profile)) };
+            }
+            m_profile = p;
+            return { symbol(admio::profile_name(p)) };
+        } } };
 
     attribute<int> directchans{ this, "directchans", 0,
         description{ "Number of DirectSpeakers channels recorded as a bed on the input channels after the objects (0: "
@@ -465,6 +481,7 @@ private:
     {
         admio::captured_programme p;
         p.name = programme_name();
+        p.profile = m_profile;
         p.objects = m_capture.objects(m_capture.size());
         p.bed = m_bed.bed();
         p.scene = m_scene.scene();

@@ -38,6 +38,7 @@
 #include "adm/write.hpp"
 #include "bw64/bw64.hpp"
 #include "ear/bs2051.hpp"
+#include "ear/conversion.hpp"
 #include "ear/layout.hpp"
 
 #include "ear_max_hoa.h"
@@ -158,26 +159,114 @@ inline std::string nominal_label(const std::string& label)
     return out;
 }
 
-/// The speaker labels of a Dolby Atmos master's bed (Dolby Atmos Master ADM
-/// Profile, table 2-14) translated to the BS.2051 labels of the loudspeakers
-/// at the same places, so that a layout with the loudspeaker takes the
-/// channel directly and the LFE is known as such; the profile's Cartesian
-/// positions coincide with the EAR's allocentric positions of these
-/// loudspeakers, so a layout without them places the channel as the EAR
-/// does, by position. Other labels are returned unchanged.
+/// A bed channel of the Dolby Atmos Master ADM Profile (tables 2-11 and
+/// 2-14): its channel assignment, speaker label, channel format name and
+/// Cartesian position, and the BS.2051 label of the loudspeaker at the same
+/// place (the profile's positions coincide with the EAR's allocentric
+/// positions of these loudspeakers).
+struct dolby_bed_channel {
+    const char* assignment;
+    const char* label;
+    const char* name;
+    const char* bs2051;
+    double x, y, z;
+};
+
+inline const std::vector<dolby_bed_channel>& dolby_bed_channels()
+{
+    static const std::vector<dolby_bed_channel> table = {
+        { "L", "RC_L", "RoomCentricLeft", "M+030", -1.0, 1.0, 0.0 },
+        { "R", "RC_R", "RoomCentricRight", "M-030", 1.0, 1.0, 0.0 },
+        { "C", "RC_C", "RoomCentricCenter", "M+000", 0.0, 1.0, 0.0 },
+        { "LFE", "RC_LFE", "RoomCentricLFE", "LFE1", -1.0, 1.0, -1.0 },
+        { "Lss", "RC_Lss", "RoomCentricLeftSideSurround", "M+090", -1.0, 0.0, 0.0 },
+        { "Rss", "RC_Rss", "RoomCentricRightSideSurround", "M-090", 1.0, 0.0, 0.0 },
+        { "Lrs", "RC_Lrs", "RoomCentricLeftRearSurround", "M+135", -1.0, -1.0, 0.0 },
+        { "Rrs", "RC_Rrs", "RoomCentricRightRearSurround", "M-135", 1.0, -1.0, 0.0 },
+        { "Lts", "RC_Lts", "RoomCentricLeftTopSurround", "U+090", -1.0, 0.0, 1.0 },
+        { "Rts", "RC_Rts", "RoomCentricRightTopSurround", "U-090", 1.0, 0.0, 1.0 },
+        { "Ls", "RC_Ls", "RoomCentricLeftSurround", "M+110", -1.0, -1.0, 0.0 },
+        { "Rs", "RC_Rs", "RoomCentricRightSurround", "M-110", 1.0, -1.0, 0.0 },
+    };
+    return table;
+}
+
+/// The profile's bed channel named by a label: its speaker label (RC_L),
+/// the BS.2051 label of the loudspeaker (M+030, also as a common
+/// definitions URN) or its channel assignment (L); null for any other.
+inline const dolby_bed_channel* dolby_bed_channel_of(const std::string& label)
+{
+    const std::string nominal = nominal_label(label);
+    for (const auto& c : dolby_bed_channels()) {
+        if (label == c.label || nominal == c.bs2051 || label == c.assignment) {
+            return &c;
+        }
+    }
+    return nullptr;
+}
+
+/// The speaker labels of a Dolby Atmos master's bed translated to the
+/// BS.2051 labels of the loudspeakers at the same places, so that a layout
+/// with the loudspeaker takes the channel directly and the LFE is known as
+/// such; a layout without the loudspeaker places the channel by its
+/// position, as the EAR does. Other labels are returned unchanged.
 inline std::string dolby_speaker_label(const std::string& label)
 {
-    static const std::pair<const char*, const char*> table[] = {
-        { "RC_L", "M+030" },   { "RC_R", "M-030" },   { "RC_C", "M+000" },   { "RC_LFE", "LFE1" },
-        { "RC_Lss", "M+090" }, { "RC_Rss", "M-090" }, { "RC_Lrs", "M+135" }, { "RC_Rrs", "M-135" },
-        { "RC_Lts", "U+090" }, { "RC_Rts", "U-090" }, { "RC_Ls", "M+110" },  { "RC_Rs", "M-110" },
-    };
-    for (const auto& entry : table) {
-        if (label == entry.first) {
-            return entry.second;
+    for (const auto& c : dolby_bed_channels()) {
+        if (label == c.label) {
+            return c.bs2051;
         }
     }
     return label;
+}
+
+/// An exclusion zone of the profile's vocabulary (tables 2-16 and 2-17):
+/// the zone element's value and its Cartesian bounds.
+struct dolby_zone {
+    const char* label;
+    double bounds[6];    ///< minX maxX minY maxY minZ maxZ
+};
+
+inline const std::vector<dolby_zone>& dolby_zones()
+{
+    static const std::vector<dolby_zone> table = {
+        { "ZM1", { -1.0, 1.0, -1.0, -0.41934, -0.499, 0.499 } },
+        { "ZM2L", { -1.0, -0.75806, -0.41934, 0.83871, -0.499, 0.499 } },
+        { "ZM2R", { 0.75806, 1.0, -0.41934, 0.83871, -0.499, 0.499 } },
+        { "ZM3L", { -1.0, -0.16129, 0.5, 1.0, -0.499, 0.499 } },
+        { "ZM3Lss", { -1.0, -0.51611, -0.707, 0.49999, -0.499, 0.499 } },
+        { "ZM3R", { 0.16129, 1.0, 0.5, 1.0, -0.499, 0.499 } },
+        { "ZM3Rss", { 0.51611, 1.0, -0.707, 0.49999, -0.499, 0.499 } },
+        { "ZM4", { -1.0, 1.0, -1.0, 0.83871, -0.499, 0.499 } },
+        { "ZM5", { -1.0, 1.0, 0.5, 1.0, -0.499, 0.499 } },
+        { "ZB", { -1.0, 1.0, -1.0, 1.0, -1.0, -0.4995 } },
+        { "ZT", { -1.0, 1.0, -1.0, 1.0, 0.4995, 1.0 } },
+    };
+    return table;
+}
+
+/// The vocabulary zone a captured zone stands for: by its label, or by its
+/// Cartesian bounds (within 0.001); null when it is not one of them.
+inline const dolby_zone* dolby_zone_of(const exclusion_zone& zone)
+{
+    for (const auto& z : dolby_zones()) {
+        if (!zone.label.empty() && zone.label == z.label) {
+            return &z;
+        }
+    }
+    if (!zone.cartesian || zone.bounds.size() != 6) {
+        return nullptr;
+    }
+    for (const auto& z : dolby_zones()) {
+        bool same = true;
+        for (size_t i = 0; i < 6 && same; ++i) {
+            same = std::abs(zone.bounds[i] - z.bounds[i]) <= 1e-3;
+        }
+        if (same) {
+            return &z;
+        }
+    }
+    return nullptr;
 }
 
 struct objects_item {
@@ -783,6 +872,35 @@ struct captured_bed {
     std::vector<captured_direct_channel> channels;
 };
 
+/// The shape of the ADM written: BS.2076 as libadm writes it (ebu), or the
+/// Dolby Atmos Master ADM Profile (dolby).
+enum class adm_profile { ebu, dolby };
+
+inline bool parse_profile(const std::string& name, adm_profile& out)
+{
+    if (name == "ebu") {
+        out = adm_profile::ebu;
+        return true;
+    }
+    if (name == "dolby") {
+        out = adm_profile::dolby;
+        return true;
+    }
+    return false;
+}
+
+inline const char* profile_name(adm_profile profile)
+{
+    return profile == adm_profile::dolby ? "dolby" : "ebu";
+}
+
+/// The audio a document describes, for what the Dolby profile asks of the
+/// track UIDs and the file.
+struct audio_format {
+    uint32_t sample_rate{ 48000 };
+    uint16_t bit_depth{ 24 };
+};
+
 /// A captured HOA scene: one audioObject with (order+1)^2 tracks in ACN
 /// order after the bed's; an order below 0 means no scene.
 struct captured_scene {
@@ -800,6 +918,7 @@ struct captured_scene {
 /// the bed (the next tracks) and the scene (the last tracks).
 struct captured_programme {
     std::string name{ "libear-max" };
+    adm_profile profile{ adm_profile::ebu };    ///< the shape of the file written
     std::vector<captured_object> objects;
     captured_bed bed;
     captured_scene scene;
@@ -859,6 +978,26 @@ struct chna_source {
     std::shared_ptr<adm::AudioPackFormat> pack;
 };
 
+inline adm::ZoneExclusion zone_exclusion_of(const std::vector<exclusion_zone>& zones)
+{
+    adm::ZoneExclusion exclusion;
+    for (const exclusion_zone& z : zones) {
+        const auto f = [&z](size_t i) { return static_cast<float>(z.bounds[i]); };
+        if (z.cartesian) {
+            adm::CartesianZone zone(adm::MinX(f(0)), adm::MaxX(f(1)), adm::MinY(f(2)), adm::MaxY(f(3)), adm::MinZ(f(4)),
+                                    adm::MaxZ(f(5)));
+            if (!z.label.empty()) zone.set(adm::ZoneLabel(z.label));
+            exclusion.add(adm::Zone(zone));
+        }
+        else {
+            adm::PolarZone zone(adm::MinElevation(f(2)), adm::MaxElevation(f(3)), adm::MinAzimuth(f(0)), adm::MaxAzimuth(f(1)));
+            if (!z.label.empty()) zone.set(adm::ZoneLabel(z.label));
+            exclusion.add(adm::Zone(zone));
+        }
+    }
+    return exclusion;
+}
+
 inline void add_object_blocks(adm::SimpleObjectHolder& holder, const captured_object& object, double length)
 {
     for (size_t k = 0; k < object.blocks.size(); ++k) {
@@ -897,23 +1036,7 @@ inline void add_object_blocks(adm::SimpleObjectHolder& holder, const captured_ob
                 }
             }
             if (!s.zones.empty()) {
-                adm::ZoneExclusion exclusion;
-                for (const exclusion_zone& z : s.zones) {
-                    const auto f = [&z](size_t i) { return static_cast<float>(z.bounds[i]); };
-                    if (z.cartesian) {
-                        adm::CartesianZone zone(adm::MinX(f(0)), adm::MaxX(f(1)), adm::MinY(f(2)), adm::MaxY(f(3)),
-                                                adm::MinZ(f(4)), adm::MaxZ(f(5)));
-                        if (!z.label.empty()) zone.set(adm::ZoneLabel(z.label));
-                        exclusion.add(adm::Zone(zone));
-                    }
-                    else {
-                        adm::PolarZone zone(adm::MinElevation(f(2)), adm::MaxElevation(f(3)), adm::MinAzimuth(f(0)),
-                                            adm::MaxAzimuth(f(1)));
-                        if (!z.label.empty()) zone.set(adm::ZoneLabel(z.label));
-                        exclusion.add(adm::Zone(zone));
-                    }
-                }
-                block.set(exclusion);
+                block.set(zone_exclusion_of(s.zones));
             }
             // the renderer ramps over c.ramp seconds; a ramp of 0 is a jump
             if (c.ramp > 0.0) {
@@ -1095,6 +1218,401 @@ inline adm::AudioPackFormatId common_bed_pack(const captured_bed& bed, std::vect
     return pack_id;
 }
 
+// ---- the Dolby Atmos Master ADM Profile -----------------------------------
+
+/// the elements of one PCM track in a Dolby document, for its ids
+struct dolby_track {
+    std::shared_ptr<adm::AudioChannelFormat> channel;
+    std::shared_ptr<adm::AudioStreamFormat> stream;
+    std::shared_ptr<adm::AudioTrackFormat> track;
+    std::shared_ptr<adm::AudioTrackUid> uid;
+    std::shared_ptr<adm::AudioPackFormat> pack;
+    size_t index{ 0 };    ///< the track in the file, 0-based
+};
+
+/// an audioObject of a Dolby document with its pack and tracks
+struct dolby_element {
+    std::shared_ptr<adm::AudioObject> object;
+    std::shared_ptr<adm::AudioPackFormat> pack;
+    std::vector<dolby_track> tracks;
+};
+
+/// The channel, stream and track formats and the track UID of one PCM
+/// track as the profile names and links them: the stream is "PCM_" and the
+/// channel's name, the track is named as the stream, the stream references
+/// both the channel and the pack, the UID carries the sample rate and bit
+/// depth.
+inline dolby_track dolby_chain(dolby_element& element, std::shared_ptr<adm::AudioChannelFormat> channel, audio_format format)
+{
+    dolby_track t;
+    t.channel = std::move(channel);
+    t.pack = element.pack;
+    const std::string name = "PCM_" + t.channel->get<adm::AudioChannelFormatName>().get();
+    t.stream = adm::AudioStreamFormat::create(adm::AudioStreamFormatName(name), adm::FormatDefinition::PCM);
+    t.track = adm::AudioTrackFormat::create(adm::AudioTrackFormatName(name), adm::FormatDefinition::PCM);
+    t.uid = adm::AudioTrackUid::create();
+    t.uid->set(adm::SampleRate(format.sample_rate));
+    t.uid->set(adm::BitDepth(format.bit_depth));
+    element.pack->addReference(t.channel);
+    t.stream->setReference(t.channel);
+    t.stream->setReference(element.pack);
+    t.track->setReference(t.stream);
+    element.object->addReference(t.uid);
+    t.uid->setReference(t.track);
+    t.uid->setReference(element.pack);
+    element.tracks.push_back(t);
+    return t;
+}
+
+/// The profile's interpolationLength: 0.005208 s (250 samples at 48 kHz).
+inline std::chrono::nanoseconds dolby_interpolation_length()
+{
+    return std::chrono::nanoseconds(5208000);
+}
+
+/// The blocks of an object as the profile has them: Cartesian positions
+/// (polar ones converted as the EAR does, with their extent), one size for
+/// width, depth and height, diffuse 0 or 1, channelLock without maxDistance,
+/// the exclusion zones of the vocabulary, jumpPosition 1 with the fixed
+/// interpolationLength (0 on the first block); what the profile has no
+/// place for is left out and reported in `warnings`.
+inline void add_dolby_object_blocks(const std::shared_ptr<adm::AudioChannelFormat>& channel, const captured_object& object,
+                                    double length, std::vector<std::string>& warnings)
+{
+    std::set<std::string> dropped;
+    for (size_t k = 0; k < object.blocks.size(); ++k) {
+        const captured_block& c = object.blocks[k];
+        const object_state& s = c.state;
+        const double next = k + 1 < object.blocks.size() ? object.blocks[k + 1].time : length;
+        const double duration = std::max(0.0, next - c.time);
+
+        ear::ObjectsTypeMetadata otm;
+        if (s.cartesian) {
+            otm.position = ear::CartesianPosition(s.x, s.y, s.z);
+        }
+        else {
+            otm.position = ear::PolarPosition(s.azimuth, s.elevation, s.distance);
+        }
+        otm.width = s.width;
+        otm.height = s.height;
+        otm.depth = s.depth;
+        ear::conversion::toCartesian(otm);
+        const auto cart = boost::get<ear::CartesianPosition>(otm.position);
+        const auto clamp = [&dropped](double v) {
+            if (v < -1.0 || v > 1.0) {
+                dropped.insert("a position outside the cube was clamped to -1..1");
+            }
+            return std::max(-1.0, std::min(1.0, v));
+        };
+        adm::AudioBlockFormatObjects block(adm::CartesianPosition(adm::X(static_cast<float>(clamp(cart.X))),
+                                                                  adm::Y(static_cast<float>(clamp(cart.Y))),
+                                                                  adm::Z(static_cast<float>(clamp(cart.Z)))));
+        block.set(adm::Rtime(to_time(c.time)));
+        block.set(adm::Duration(to_time(duration)));
+        block.set(adm::Cartesian(true));
+        const double size = std::max(0.0, std::max(otm.width, std::max(otm.height, otm.depth)));
+        if (size > 0.0) {
+            if (std::abs(otm.width - otm.height) > 1e-6 || std::abs(otm.width - otm.depth) > 1e-6) {
+                dropped.insert("width, height and depth differ: the largest is written for all three");
+            }
+            const float f = static_cast<float>(std::min(1.0, size));
+            block.set(adm::Width(f));
+            block.set(adm::Height(f));
+            block.set(adm::Depth(f));
+        }
+        block.set(adm::Gain::fromLinear(s.gain));
+        if (s.diffuse > 0.0) {
+            if (s.diffuse != 1.0) {
+                dropped.insert("diffuse rounded to 0 or 1");
+            }
+            if (s.diffuse >= 0.5) {
+                block.set(adm::Diffuse(1.0f));
+            }
+        }
+        if (s.channellock) {
+            block.set(adm::ChannelLock(adm::ChannelLockFlag(true)));
+            if (s.channellock_distance > 0.0) {
+                dropped.insert("the channelLock maxDistance");
+            }
+        }
+        if (s.divergence > 0.0) {
+            dropped.insert("objectDivergence");
+        }
+        if (s.screenref) {
+            dropped.insert("screenRef");
+        }
+        if (s.screenedgelock_h != "none" || s.screenedgelock_v != "none") {
+            dropped.insert("screenEdgeLock");
+        }
+        if (!s.zones.empty()) {
+            std::vector<exclusion_zone> zones;
+            for (const exclusion_zone& z : s.zones) {
+                const dolby_zone* v = dolby_zone_of(z);
+                if (!v) {
+                    dropped.insert("an exclusion zone that is not one of the profile's (ZM1 ZM2L ZM2R ZM3L ZM3Lss ZM3R ZM3Rss ZM4 ZM5 ZB ZT)");
+                    continue;
+                }
+                exclusion_zone zone;
+                zone.cartesian = true;
+                zone.bounds.assign(v->bounds, v->bounds + 6);
+                zone.label = v->label;
+                zones.push_back(zone);
+            }
+            if (!zones.empty()) {
+                block.set(zone_exclusion_of(zones));
+            }
+        }
+        block.set(adm::JumpPosition(adm::JumpPositionFlag(true),
+                                    adm::InterpolationLength(k == 0 ? std::chrono::nanoseconds(0) : dolby_interpolation_length())));
+        channel->add(block);
+    }
+    if (!dropped.empty()) {
+        std::string what;
+        for (const auto& d : dropped) {
+            what += (what.empty() ? "" : "; ") + d;
+        }
+        warnings.push_back("object '" + object.name + "': not in the Dolby profile, left out: " + what);
+    }
+}
+
+/// Give the elements of a Dolby document the ids the profile asks for
+/// (section 3): one counter from 0x1001 for the channel, stream and track
+/// formats, another for the packs, the track UIDs from 1, the blocks from
+/// 1; audioObject ids from 0x1001 with a bed reserving as many values as
+/// it has tracks, and the objects from 0x100b at the earliest. The bed
+/// comes first.
+inline void assign_dolby_ids(const std::shared_ptr<adm::Document>& doc, const std::vector<dolby_element>& elements)
+{
+    // the document gave every element an id as it was added; an element
+    // refuses an id another one holds, so all are cleared first
+    for (const dolby_element& e : elements) {
+        e.object->set(adm::AudioObjectId());
+        e.pack->set(adm::AudioPackFormatId());
+        for (const dolby_track& t : e.tracks) {
+            t.channel->set(adm::AudioChannelFormatId());
+            t.stream->set(adm::AudioStreamFormatId());
+            t.track->set(adm::AudioTrackFormatId());
+            t.uid->set(adm::AudioTrackUidId());
+        }
+    }
+    for (auto& programme : doc->getElements<adm::AudioProgramme>()) {
+        programme->set(adm::AudioProgrammeId());
+        programme->set(adm::AudioProgrammeId(adm::AudioProgrammeIdValue(0x1001u)));
+    }
+    for (auto& content : doc->getElements<adm::AudioContent>()) {
+        content->set(adm::AudioContentId());
+        content->set(adm::AudioContentId(adm::AudioContentIdValue(0x1001u)));
+    }
+    uint32_t next_object = 0x1001u;
+    uint32_t next_pack = 0x1001u;
+    uint32_t next_channel = 0x1001u;
+    uint32_t next_uid = 1u;
+    for (const dolby_element& e : elements) {
+        const adm::TypeDescriptor type = e.pack->get<adm::TypeDescriptor>();
+        const bool bed = type == adm::TypeDefinition::DIRECT_SPEAKERS;
+        if (!bed) {
+            next_object = std::max(next_object, 0x100bu);
+        }
+        e.object->set(adm::AudioObjectId(adm::AudioObjectIdValue(static_cast<uint16_t>(next_object))));
+        next_object += bed ? static_cast<uint32_t>(std::max<size_t>(1, e.tracks.size())) : 1u;
+        adm::AudioPackFormatId pack_id;
+        pack_id.set(type);
+        pack_id.set(adm::AudioPackFormatIdValue(static_cast<uint16_t>(next_pack++)));
+        e.pack->set(pack_id);
+        for (const dolby_track& t : e.tracks) {
+            const uint16_t value = static_cast<uint16_t>(next_channel++);
+            adm::AudioChannelFormatId channel_id;
+            channel_id.set(type);
+            channel_id.set(adm::AudioChannelFormatIdValue(value));
+            t.channel->set(channel_id);
+            adm::AudioStreamFormatId stream_id;
+            stream_id.set(type);
+            stream_id.set(adm::AudioStreamFormatIdValue(value));
+            t.stream->set(stream_id);
+            adm::AudioTrackFormatId track_id;
+            track_id.set(type);
+            track_id.set(adm::AudioTrackFormatIdValue(value));
+            track_id.set(adm::AudioTrackFormatIdCounter(1u));
+            t.track->set(track_id);
+            t.uid->set(adm::AudioTrackUidId(adm::AudioTrackUidIdValue(next_uid++)));
+            uint32_t counter = 1u;
+            const auto block_id = [&](uint32_t n) {
+                adm::AudioBlockFormatId id;
+                id.set(type);
+                id.set(adm::AudioBlockFormatIdValue(value));
+                id.set(adm::AudioBlockFormatIdCounter(n));
+                return id;
+            };
+            if (bed) {
+                for (auto& b : t.channel->getElements<adm::AudioBlockFormatDirectSpeakers>()) {
+                    b.set(block_id(counter++));
+                }
+            }
+            else {
+                for (auto& b : t.channel->getElements<adm::AudioBlockFormatObjects>()) {
+                    b.set(block_id(counter++));
+                }
+            }
+        }
+    }
+}
+
+/// The channel configuration sets of the profile (table 2-21), by channel
+/// assignment in order.
+inline const std::vector<std::pair<const char*, std::vector<std::string>>>& dolby_bed_sets()
+{
+    static const std::vector<std::pair<const char*, std::vector<std::string>>> sets = {
+        { "2.0", { "L", "R" } },
+        { "3.0", { "L", "R", "C" } },
+        { "5.0", { "L", "R", "C", "Ls", "Rs" } },
+        { "5.1", { "L", "R", "C", "LFE", "Ls", "Rs" } },
+        { "7.0", { "L", "R", "C", "Lss", "Rss", "Lrs", "Rrs" } },
+        { "7.1", { "L", "R", "C", "LFE", "Lss", "Rss", "Lrs", "Rrs" } },
+        { "7.0.2", { "L", "R", "C", "Lss", "Rss", "Lrs", "Rrs", "Lts", "Rts" } },
+        { "7.1.2", { "L", "R", "C", "LFE", "Lss", "Rss", "Lrs", "Rrs", "Lts", "Rts" } },
+    };
+    return sets;
+}
+
+/// Build the document of a captured programme as a Dolby Atmos master
+/// (the Dolby Atmos Master ADM Profile): the bed with the profile's channel
+/// formats, labels and positions, the objects with Cartesian blocks, the
+/// profile's names, timing, references and ids. An HOA scene has no place
+/// in it and is left out, with a warning, as is anything else the profile
+/// cannot carry.
+inline std::shared_ptr<adm::Document> build_dolby_document(const captured_programme& captured, double length,
+                                                           std::vector<bw64::AudioId>& chna_ids, std::vector<std::string>& warnings,
+                                                           audio_format format)
+{
+    auto doc = adm::Document::create();
+    auto programme = adm::AudioProgramme::create(adm::AudioProgrammeName(captured.name));
+    programme->set(adm::Start(to_time(0.0)));
+    programme->set(adm::End(to_time(length)));
+    auto content = adm::AudioContent::create(adm::AudioContentName("Atmos_Master_Content"));
+    content->set(adm::Dialogue::MIXED);
+    content->set(adm::MixedContent::UNDEFINED);
+    programme->addReference(content);
+    doc->add(programme);
+
+    if (format.sample_rate != 48000 && format.sample_rate != 96000) {
+        warnings.push_back("the Dolby profile takes 48000 or 96000 Hz audio, not " + std::to_string(format.sample_rate));
+    }
+    if (format.bit_depth != 24) {
+        warnings.push_back("the Dolby profile takes 24-bit audio, not " + std::to_string(format.bit_depth));
+    }
+    if (captured.objects.size() > 118) {
+        warnings.push_back("the Dolby profile takes at most 118 objects, not " + std::to_string(captured.objects.size()));
+    }
+    if (captured.objects.size() + captured.bed.channels.size() > 128) {
+        warnings.push_back("the Dolby profile takes at most 128 tracks, not "
+                           + std::to_string(captured.objects.size() + captured.bed.channels.size()));
+    }
+    if (captured.scene.order >= 0) {
+        warnings.push_back("scene '" + captured.scene.name + "': an HOA scene has no place in the Dolby profile; its tracks are written without metadata");
+    }
+
+    std::vector<dolby_element> elements;    // the bed first, as the ids go
+    std::vector<dolby_track> by_track;      // in track order, for the chna chunk
+
+    const auto make_object = [&](const std::string& name, adm::TypeDescriptor type) {
+        dolby_element e;
+        e.object = adm::AudioObject::create(adm::AudioObjectName(name));
+        e.object->set(adm::Start(to_time(0.0)));
+        e.object->set(adm::Duration(to_time(length)));
+        e.pack = adm::AudioPackFormat::create(adm::AudioPackFormatName(name), type);
+        e.object->addReference(e.pack);
+        content->addReference(e.object);
+        doc->add(e.object);
+        return e;
+    };
+
+    std::vector<dolby_track> object_tracks;
+    std::vector<dolby_element> object_elements;
+    for (const auto& object : captured.objects) {
+        dolby_element e = make_object(object.name, adm::TypeDefinition::OBJECTS);
+        auto channel = adm::AudioChannelFormat::create(adm::AudioChannelFormatName(object.name), adm::TypeDefinition::OBJECTS);
+        add_dolby_object_blocks(channel, object, length, warnings);
+        object_tracks.push_back(dolby_chain(e, channel, format));
+        object_elements.push_back(e);
+    }
+
+    if (!captured.bed.channels.empty()) {
+        const captured_bed& bed = captured.bed;
+        dolby_element e = make_object(bed.name, adm::TypeDefinition::DIRECT_SPEAKERS);
+        std::vector<std::string> assignments;
+        bool timed = false;
+        for (size_t i = 0; i < bed.channels.size(); ++i) {
+            const captured_direct_channel& ch = bed.channels[i];
+            timed = timed || ch.timed();
+            const std::string label = ch.labels.empty() ? std::string() : ch.labels.front();
+            if (ch.labels.size() > 1) {
+                warnings.push_back("bed '" + bed.name + "': channel " + std::to_string(i + 1)
+                                   + " has several speaker labels; the profile takes one (" + label + ")");
+            }
+            const dolby_bed_channel* d = dolby_bed_channel_of(label);
+            adm::AudioBlockFormatDirectSpeakers block;
+            block.set(adm::Cartesian(true));
+            std::string name;
+            if (d) {
+                name = d->name;
+                assignments.push_back(d->assignment);
+                block.add(adm::SpeakerLabel(d->label));
+                block.set(adm::CartesianSpeakerPosition(adm::X(static_cast<float>(d->x)), adm::Y(static_cast<float>(d->y)),
+                                                        adm::Z(static_cast<float>(d->z))));
+            }
+            else {
+                name = bed.name + " " + (label.empty() ? std::to_string(i + 1) : label);
+                assignments.push_back(label.empty() ? "?" : label);
+                warnings.push_back("bed '" + bed.name + "': channel " + std::to_string(i + 1) + (label.empty() ? " has no speaker label" : " (" + label + ") is not one of the profile's bed channels")
+                                   + " (L R C LFE Lss Rss Lrs Rrs Lts Rts Ls Rs); written as captured");
+                if (!label.empty()) {
+                    block.add(adm::SpeakerLabel(label));
+                }
+                if (ch.cartesian) {
+                    block.set(adm::CartesianSpeakerPosition(adm::X(static_cast<float>(ch.x)), adm::Y(static_cast<float>(ch.y)),
+                                                            adm::Z(static_cast<float>(ch.z))));
+                }
+                else {
+                    const auto cart = ear::conversion::pointPolarToCart(ear::PolarPosition(ch.azimuth, ch.elevation, ch.distance));
+                    block.set(adm::CartesianSpeakerPosition(adm::X(static_cast<float>(cart.X)), adm::Y(static_cast<float>(cart.Y)),
+                                                            adm::Z(static_cast<float>(cart.Z))));
+                }
+            }
+            auto channel = adm::AudioChannelFormat::create(adm::AudioChannelFormatName(name), adm::TypeDefinition::DIRECT_SPEAKERS);
+            channel->add(block);
+            by_track.push_back(dolby_chain(e, channel, format));
+        }
+        if (timed) {
+            warnings.push_back("bed '" + bed.name + "': its timed changes are not written (the profile's beds are static)");
+        }
+        bool known_set = false;
+        for (const auto& set : dolby_bed_sets()) {
+            known_set = known_set || set.second == assignments;
+        }
+        if (!known_set) {
+            std::string order;
+            for (const auto& a : assignments) {
+                order += (order.empty() ? "" : " ") + a;
+            }
+            warnings.push_back("bed '" + bed.name + "': " + order
+                               + " is not one of the profile's channel configurations (2.0 L R, 3.0 L R C, 5.0 L R C Ls Rs, 5.1 L R C LFE Ls Rs, "
+                                 "7.0 L R C Lss Rss Lrs Rrs, 7.1 L R C LFE Lss Rss Lrs Rrs, 7.0.2 and 7.1.2 with Lts Rts)");
+        }
+        elements.push_back(e);
+    }
+    elements.insert(elements.end(), object_elements.begin(), object_elements.end());
+    by_track.insert(by_track.begin(), object_tracks.begin(), object_tracks.end());
+
+    assign_dolby_ids(doc, elements);
+
+    for (size_t i = 0; i < by_track.size(); ++i) {
+        const dolby_track& t = by_track[i];
+        chna_ids.emplace_back(static_cast<uint16_t>(i + 1), adm::formatId(t.uid->get<adm::AudioTrackUidId>()),
+                              adm::formatId(t.track->get<adm::AudioTrackFormatId>()), adm::formatId(t.pack->get<adm::AudioPackFormatId>()));
+    }
+    return doc;
+}
+
 } // namespace detail
 
 /// Build an ADM document for a captured programme: a programme, a content,
@@ -1105,10 +1623,17 @@ inline adm::AudioPackFormatId common_bed_pack(const captured_bed& bed, std::vect
 /// entries are appended to `chna_ids` in track order: objects, bed, scene.
 /// Things written differently from what was asked are explained in
 /// `warnings` (a bed whose packformat could not be used as a common
-/// definitions layout).
+/// definitions layout). With the Dolby profile the document is shaped as
+/// a Dolby Atmos master instead (see detail::build_dolby_document);
+/// `format` tells the audio's sample rate and bit depth, which that profile
+/// writes in the track UIDs.
 inline std::shared_ptr<adm::Document> build_document(const captured_programme& captured, double length,
-                                                     std::vector<bw64::AudioId>& chna_ids, std::vector<std::string>& warnings)
+                                                     std::vector<bw64::AudioId>& chna_ids, std::vector<std::string>& warnings,
+                                                     audio_format format = audio_format())
 {
+    if (captured.profile == adm_profile::dolby) {
+        return detail::build_dolby_document(captured, length, chna_ids, warnings, format);
+    }
     auto doc = adm::Document::create();
     auto programme = adm::AudioProgramme::create(adm::AudioProgrammeName(captured.name));
     auto content = adm::AudioContent::create(adm::AudioContentName(captured.name));
@@ -1269,8 +1794,10 @@ inline std::string to_xml(const std::shared_ptr<adm::Document>& doc)
 
 /// Write `audio_in` (any WAV/BW64 file) to `out` as a BW64 file carrying the
 /// given ADM document and chna entries. Returns the number of frames written.
+/// With the Dolby profile a file of 4 GB or more is marked RF64 instead of
+/// BW64, as the profile asks.
 inline uint64_t write_file(const std::string& out, const std::string& audio_in, const std::shared_ptr<adm::Document>& doc,
-                           const std::vector<bw64::AudioId>& chna_ids)
+                           const std::vector<bw64::AudioId>& chna_ids, adm_profile profile = adm_profile::ebu)
 {
     auto reader = bw64::readFile(audio_in);
     for (const auto& id : chna_ids) {
@@ -1285,6 +1812,7 @@ inline uint64_t write_file(const std::string& out, const std::string& audio_in, 
     }
     auto axml = std::make_shared<bw64::AxmlChunk>(to_xml(doc));
     auto writer = bw64::writeFile(out, reader->channels(), reader->sampleRate(), reader->bitDepth(), chna, axml);
+    writer->useRf64Id(profile == adm_profile::dolby);
 
     const uint64_t block = 4096;
     std::vector<float> buffer(block * reader->channels());

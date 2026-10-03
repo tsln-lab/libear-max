@@ -92,6 +92,21 @@ public:
     attribute<symbol> programmename{ this, "programmename", "libear-max",
         description{ "Name of the audioProgramme written." } };
 
+    attribute<symbol> profile{ this, "profile", "ebu",
+        description{ "Shape of the ADM written: 'ebu' (BS.2076 as libadm writes it) or 'dolby' (the Dolby Atmos Master ADM "
+                     "Profile: the bed with Dolby's channel formats, labels and Cartesian positions, the objects with Cartesian "
+                     "blocks, the profile's names, ids and timing; what the profile has no place for, such as an HOA scene, is left "
+                     "out with a warning)." },
+        setter{ MIN_FUNCTION {
+            admio::adm_profile p;
+            if (!admio::parse_profile(std::string(args[0]), p)) {
+                cerr << "profile must be ebu or dolby" << endl;
+                return { symbol(admio::profile_name(m_profile)) };
+            }
+            m_profile = p;
+            return { symbol(admio::profile_name(p)) };
+        } } };
+
     attribute<int> directchans{ this, "directchans", 0,
         description{ "Number of DirectSpeakers channels written as a bed on the tracks after the objects (0: no bed); "
                      "their metadata comes from 'direct' messages." },
@@ -319,9 +334,10 @@ public:
                     captured.limit(reader->channels());
                 }
                 std::vector<bw64::AudioId> chna_ids;
-                auto doc = build(captured, length, chna_ids);
+                const admio::audio_format format{ reader->sampleRate(), reader->bitDepth() };
+                auto doc = build(captured, length, chna_ids, format);
                 reader.reset();
-                const uint64_t frames = admio::write_file(out, in, doc, chna_ids);
+                const uint64_t frames = admio::write_file(out, in, doc, chna_ids, captured.profile);
                 out_info.send("written", symbol(out), static_cast<int>(captured.channels()), static_cast<double>(frames));
             }
             catch (const std::exception& e) {
@@ -529,6 +545,7 @@ public:
 
 private:
     double m_capture_time_override{ -1.0 };
+    admio::adm_profile m_profile{ admio::adm_profile::ebu };
 
     std::string programme_name() const
     {
@@ -541,16 +558,18 @@ private:
     {
         admio::captured_programme p;
         p.name = programme_name();
+        p.profile = m_profile;
         p.objects = m_capture.objects(m_capture.size());
         p.bed = m_bed.bed();
         p.scene = m_scene.scene();
         return p;
     }
 
-    std::shared_ptr<adm::Document> build(const admio::captured_programme& captured, double length, std::vector<bw64::AudioId>& chna_ids)
+    std::shared_ptr<adm::Document> build(const admio::captured_programme& captured, double length, std::vector<bw64::AudioId>& chna_ids,
+                                         admio::audio_format format = admio::audio_format())
     {
         std::vector<std::string> warnings;
-        auto doc = admio::build_document(captured, length, chna_ids, warnings);
+        auto doc = admio::build_document(captured, length, chna_ids, warnings, format);
         for (const auto& w : warnings) {
             cerr << w << endl;
         }
