@@ -80,11 +80,29 @@
 			},
 			{
 				"box": {
+					"id": "obj-24",
+					"maxclass": "newobj",
+					"patching_rect": [
+						15.0,
+						55.0,
+						60.0,
+						22.0
+					],
+					"text": "loadbang",
+					"numinlets": 1,
+					"numoutlets": 1,
+					"outlettype": [
+						"bang"
+					]
+				}
+			},
+			{
+				"box": {
 					"id": "obj-3",
 					"maxclass": "message",
 					"patching_rect": [
 						15.0,
-						75.0,
+						85.0,
 						50.0,
 						22.0
 					],
@@ -102,7 +120,7 @@
 					"maxclass": "message",
 					"patching_rect": [
 						80.0,
-						75.0,
+						85.0,
 						60.0,
 						22.0
 					],
@@ -120,7 +138,7 @@
 					"maxclass": "message",
 					"patching_rect": [
 						150.0,
-						75.0,
+						85.0,
 						60.0,
 						22.0
 					],
@@ -138,7 +156,7 @@
 					"maxclass": "message",
 					"patching_rect": [
 						220.0,
-						75.0,
+						85.0,
 						130.0,
 						22.0
 					],
@@ -156,7 +174,7 @@
 					"maxclass": "message",
 					"patching_rect": [
 						360.0,
-						75.0,
+						85.0,
 						125.0,
 						22.0
 					],
@@ -174,7 +192,7 @@
 					"maxclass": "message",
 					"patching_rect": [
 						495.0,
-						75.0,
+						85.0,
 						130.0,
 						22.0
 					],
@@ -192,7 +210,7 @@
 					"maxclass": "message",
 					"patching_rect": [
 						635.0,
-						75.0,
+						85.0,
 						100.0,
 						22.0
 					],
@@ -210,7 +228,7 @@
 					"maxclass": "message",
 					"patching_rect": [
 						15.0,
-						105.0,
+						115.0,
 						90.0,
 						22.0
 					],
@@ -228,7 +246,7 @@
 					"maxclass": "message",
 					"patching_rect": [
 						115.0,
-						105.0,
+						115.0,
 						65.0,
 						22.0
 					],
@@ -246,7 +264,7 @@
 					"maxclass": "message",
 					"patching_rect": [
 						190.0,
-						105.0,
+						115.0,
 						70.0,
 						22.0
 					],
@@ -264,7 +282,7 @@
 					"maxclass": "message",
 					"patching_rect": [
 						270.0,
-						105.0,
+						115.0,
 						60.0,
 						22.0
 					],
@@ -282,7 +300,7 @@
 					"maxclass": "message",
 					"patching_rect": [
 						340.0,
-						105.0,
+						115.0,
 						75.0,
 						22.0
 					],
@@ -300,7 +318,7 @@
 					"maxclass": "message",
 					"patching_rect": [
 						425.0,
-						105.0,
+						115.0,
 						75.0,
 						22.0
 					],
@@ -401,7 +419,7 @@
 						620.0,
 						20.0
 					],
-					"text": "\u2190 the matrix as matrix~ messages (input output gain): a decoder without mc, for first order to 0+5+0",
+					"text": "\u2190 'clear', then the matrix as matrix~ messages (input output gain): a decoder without mc, for first order to 0+5+0",
 					"numinlets": 1,
 					"numoutlets": 0
 				}
@@ -454,6 +472,18 @@
 			}
 		],
 		"lines": [
+			{
+				"patchline": {
+					"source": [
+						"obj-24",
+						0
+					],
+					"destination": [
+						"obj-3",
+						0
+					]
+				}
+			},
 			{
 				"patchline": {
 					"source": [

@@ -38,7 +38,7 @@ public:
 
     inlet<> in_main{ this, "(bang) calculate and output; (order, normalization, layout) attributes" };
     outlet<> out_rows{ this, "(list) per ambisonic component: its channel number, then a gain per loudspeaker" };
-    outlet<> out_matrix{ this, "(list) the matrix as matrix~ messages: input output gain, one per entry" };
+    outlet<> out_matrix{ this, "(clear, then list) the matrix as matrix~ messages: input output gain, one per entry" };
     outlet<> out_info{ this, "(anything) components, channels, positions, layouts" };
 
     ear_hoa(const atoms& args = {})
@@ -95,7 +95,8 @@ public:
 
     attribute<bool> autocalc{ this, "autocalc", true,
         description{ "Output the matrix whenever the layout, order or normalization changes. "
-                     "When off, send a bang to output it." } };
+                     "When off, send a bang to output it. Nothing is output when the object is created: "
+                     "send a bang (from loadbang) for the initial matrix." } };
 
     // ------------------------------------------------------------------
     // messages
@@ -205,13 +206,15 @@ public:
         }
     }
 
-    /// Send the matrix: the matrix~ messages from the middle outlet first,
-    /// then one list per component from the left outlet (right to left).
+    /// Send the matrix: the matrix~ messages from the middle outlet first
+    /// ('clear', so that the entries of a previous size are gone, then every
+    /// entry), then one list per component from the left outlet (right to left).
     void calculate()
     {
         if (m_matrix.empty()) {
             return;
         }
+        out_matrix.send(atoms{ symbol("clear") });
         for (size_t i = 0; i < m_matrix.size(); ++i) {
             for (size_t ch = 0; ch < m_matrix[i].size(); ++ch) {
                 out_matrix.send(atoms{ static_cast<int>(i), static_cast<int>(ch), m_matrix[i][ch] });

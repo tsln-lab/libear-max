@@ -107,11 +107,13 @@ SCENARIO("ear.hoa outputs the decoding matrix of an ambisonic scene") {
                 }
             }
 
-            THEN("the matrix~ messages cover every entry, inputs and outputs 0-based") {
-                REQUIRE(entries.size() == 4 * k_channels_050);
+            THEN("the matrix~ messages clear the matrix, then cover every entry, inputs and outputs 0-based") {
+                REQUIRE(entries.size() == 1 + 4 * k_channels_050);
+                REQUIRE(entries.front().empty());    // 'clear' carries no numbers
+                REQUIRE(c74::max::object_getoutput(obj, k_matrix)->front().front().a_type == c74::max::A_SYM);
                 for (size_t i = 0; i < 4; ++i) {
                     for (size_t ch = 0; ch < k_channels_050; ++ch) {
-                        const auto& e = entries[i * k_channels_050 + ch];
+                        const auto& e = entries[1 + i * k_channels_050 + ch];
                         REQUIRE(e.size() == 3);
                         REQUIRE(e[0] == Approx(static_cast<double>(i)));
                         REQUIRE(e[1] == Approx(static_cast<double>(ch)));
@@ -129,7 +131,7 @@ SCENARIO("ear.hoa outputs the decoding matrix of an ambisonic scene") {
                 const auto rows = lists(obj, k_rows);
                 REQUIRE(rows.size() == 16);
                 REQUIRE(rows[15][0] == Approx(16.0));
-                REQUIRE(lists(obj, k_matrix).size() == 16 * k_channels_050);
+                REQUIRE(lists(obj, k_matrix).size() == 1 + 16 * k_channels_050);
                 const auto expected = reference_matrix("0+5+0", 3, "SN3D");
                 for (size_t ch = 0; ch < k_channels_050; ++ch) {
                     REQUIRE(rows[15][1 + ch] == Approx(expected[15][ch]));

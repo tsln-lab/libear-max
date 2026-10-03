@@ -112,7 +112,9 @@ so `[ear.hoa 0+5+0]` feeding `[matrix~ 4 6]` decodes a first-order scene
 without mc objects. The right outlet answers `components` (the order and degree of each
 ACN channel), `channels`, `positions` and `layouts`. The matrix is output
 whenever `layout`, `order` or `normalization` changes (`@autocalc 1`) or on
-`bang`.
+`bang`; nothing is output when the object is created, so use `loadbang` for
+the initial matrix. The `matrix~` messages start with `clear`, so entries
+of a previous order are removed.
 
 ### mc.ear.encode~
 

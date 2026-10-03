@@ -27,7 +27,7 @@
 				<arg name='autocalc' optional='0' type='int' />
 			</arglist>
 			<digest>Set the autocalc attribute</digest>
-			<description>Set the <at>autocalc</at> attribute. Output the matrix whenever the layout, order or normalization changes. When off, send a bang to output it.</description>
+			<description>Set the <at>autocalc</at> attribute. Output the matrix whenever the layout, order or normalization changes. When off, send a bang to output it. Nothing is output when the object is created: send a bang (from loadbang) for the initial matrix.</description>
 		</method>
 		<method name='bang'>
 			<digest>Output the decoding matrix</digest>
@@ -77,7 +77,7 @@
 	<attributelist>
 		<attribute name='autocalc' get='1' set='1' type='long' size='1'>
 			<digest>Output the matrix whenever the layout, order or normalization changes</digest>
-			<description>Output the matrix whenever the layout, order or normalization changes. When off, send a bang to output it. Default: 1.</description>
+			<description>Output the matrix whenever the layout, order or normalization changes. When off, send a bang to output it. Nothing is output when the object is created: send a bang (from loadbang) for the initial matrix. Default: 1.</description>
 		</attribute>
 		<attribute name='layout' get='1' set='1' type='symbol' size='1'>
 			<digest>ITU-R BS.2051 loudspeaker layout name, such as 0+2+0, 0+5+0, 2+5+0, 4+5+0, 4+9+0, 9+10+3</digest>
