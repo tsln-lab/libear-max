@@ -16,6 +16,7 @@ and unit tests.
 | `mc.ear.objects~` | Multichannel object renderer: every channel of the multichannel input is an object with its own metadata, the multichannel output has one channel per loudspeaker. The decorrelators run once per loudspeaker on the shared diffuse bus. |
 | `mc.ear.direct~` | Multichannel bed renderer: every input channel is a DirectSpeakers channel (by label or position), rendered onto the layout. `inputlayout 0+5+0` labels the input after a BS.2051 layout. |
 | `mc.ear.hoa~` | Multichannel ambisonic (ADM *HOA*) decoder: the input carries the ambisonic components in ACN order, the output one channel per loudspeaker, decoded with the EAR's AllRAD design for the layout. |
+| `ear.hoa` | Control-rate counterpart of `mc.ear.hoa~`: outputs the decoding matrix for a layout, order and normalization as lists, one per ambisonic component, and as `matrix~` messages. |
 | `mc.ear.encode~` | Multichannel ambisonic encoder, the counterpart of `mc.ear.objects~`: every input channel is an object positioned with the same messages, the output carries the summed ambisonic components in ACN order. |
 | `ear.adm` | Reads and writes ADM files (BW64 with ADM metadata): resolves a file's rendering items like the EAR, plays its object metadata to the renderers with the reference's interpolation rules, and captures object messages to write them with recorded audio as a new ADM file. |
 | `mc.ear.select~` | Picks channels of a multichannel signal by number, to route the tracks of a file (as `ear.adm` reports them) to the renderer that handles them. |
@@ -98,6 +99,20 @@ the layout's point-source panner, mean-power normalized), identical to the
 reference renderer's. The layout's LFE channel stays silent, and
 `screenRef` and `nfcRefDist` are not implemented, as in libear. Send
 `components` to post which order and degree each input channel carries.
+
+### ear.hoa
+
+`[ear.hoa 0+5+0 @order 1]` is the control-rate counterpart: the same
+decoding matrix, output as lists instead of applied to signals. The left
+outlet sends one list per ambisonic component, in ACN order: the component's
+channel number (1-based) followed by a gain per loudspeaker in the layout's
+channel order, which `coll` stores as a row. The middle outlet sends the
+matrix as `matrix~` messages, `input output gain` (0-based) for every entry,
+so `[ear.hoa 0+5+0]` feeding `[matrix~ 4 6]` decodes a first-order scene
+without mc objects. The right outlet answers `components` (the order and degree of each
+ACN channel), `channels`, `positions` and `layouts`. The matrix is output
+whenever `layout`, `order` or `normalization` changes (`@autocalc 1`) or on
+`bang`.
 
 ### mc.ear.encode~
 
@@ -511,6 +526,7 @@ source/projects/ear.objects_tilde/  ear.objects~
 source/projects/mc.ear.objects_tilde/  mc.ear.objects~ (multichannel)
 source/projects/mc.ear.direct_tilde/   mc.ear.direct~ (multichannel)
 source/projects/mc.ear.hoa_tilde/      mc.ear.hoa~ (multichannel ambisonic decoder)
+source/projects/ear.hoa/               ear.hoa (the decoding matrix at control rate)
 source/projects/mc.ear.encode_tilde/   mc.ear.encode~ (multichannel ambisonic encoder)
 source/projects/mc.ear.select_tilde/   mc.ear.select~ (channel selection for routing file tracks)
 source/projects/ear.adm/               ear.adm (ADM file reading and writing; test_data/ holds the EAR-generated fixture)
@@ -591,7 +607,7 @@ page is not well-formed XML.
 - Upstream the reference parity work to `ebu/libear`.
 - Custom reproduction screens (currently the default screen is used for
   `screenref` and screen edge lock).
-- `ear.hoa`: control-rate HOA decoding matrix, and HOA `screenRef` once libear implements it.
+- HOA `screenRef` and `nfcRefDist`, once libear and the reference implement them.
 
 ## License
 

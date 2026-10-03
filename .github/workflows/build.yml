@@ -153,8 +153,8 @@ jobs:
         run: |
           shopt -s nullglob
           files=(docs/*.maxref.xml)
-          if [ "${#files[@]}" -ne 11 ]; then
-            echo "expected 11 reference pages in docs/, found ${#files[@]}: ${files[*]}"
+          if [ "${#files[@]}" -ne 12 ]; then
+            echo "expected 12 reference pages in docs/, found ${#files[@]}: ${files[*]}"
             exit 1
           fi
           python3 tools/check_maxref.py "${files[@]}"
