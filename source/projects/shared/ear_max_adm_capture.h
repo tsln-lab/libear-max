@@ -308,6 +308,17 @@ private:
             }
             zone.bounds.push_back(v);
         }
+        // a lower bound above its upper bound is an empty box; a polar zone's
+        // azimuths may wrap around the back (minAz 150 maxAz -150), so only
+        // the elevations are checked there
+        const bool inverted = zone.cartesian
+            ? (zone.bounds[0] > zone.bounds[1] || zone.bounds[2] > zone.bounds[3] || zone.bounds[4] > zone.bounds[5])
+            : zone.bounds[2] > zone.bounds[3];
+        if (inverted) {
+            error = zone.cartesian ? "zone cartesian: each min must not exceed its max"
+                                   : "zone polar: minEl must not exceed maxEl";
+            return false;
+        }
         s.zones.push_back(std::move(zone));
         return true;
     }

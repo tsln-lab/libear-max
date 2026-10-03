@@ -374,10 +374,13 @@ SCENARIO("ear.adm captures object messages and writes them as ADM") {
         obj.capture_at(2000.0, "cartesian", 2, atoms{ 1 });
         obj.capture_at(2000.0, "position", 2, atoms{ 0.5, 0.5, 0.0 });
         obj.capture_at(2000.0, "diffuse", 0, atoms{ 0.25 });
+        obj.capture_at(2000.0, "zone", 2, atoms{ symbol("polar"), 150.0, -150.0, -90.0, 90.0 });    // azimuths wrapping the back: fine
         obj.capture_at(2500.0, "zone", 1, atoms{ symbol("polar"), -30.0, 30.0, -10.0, 10.0 });
         obj.capture_at(2500.0, "zone", 1, atoms{ symbol("cartesian"), -1.0, 1.0, -1.0, 0.0, -0.5, 0.5 });
         obj.capture_at(2500.0, "zone", 1, atoms{ symbol("polar"), -200.0, 30.0, -10.0, 10.0 });    // out of range: ignored
         obj.capture_at(2500.0, "zone", 2, atoms{ symbol("polar"), 0.0, 90.0 });                     // too few bounds: ignored
+        obj.capture_at(2500.0, "zone", 2, atoms{ symbol("cartesian"), 1.0, -1.0, -1.0, 1.0, -1.0, 1.0 });    // minX above maxX: ignored
+        obj.capture_at(2500.0, "zone", 2, atoms{ symbol("polar"), -30.0, 30.0, 40.0, 10.0 });              // minEl above maxEl: ignored
         obj.capture_at(2500.0, "azimuth", 1, atoms{ symbol("left") });    // invalid: ignored
         obj.capture_at(3000.0, "ramp", 1, atoms{ -1.0 });                  // back to the ramp attribute
         obj.capture_at(3000.0, "elevation", 1, atoms{ 20.0 });
@@ -410,12 +413,14 @@ SCENARIO("ear.adm captures object messages and writes them as ADM") {
             REQUIRE(one[5].time == Approx(2.5));
             REQUIRE(one[5].state.zones.empty());
             const auto& two = obj.captured(1);
-            REQUIRE(two.size() == 2);    // the rejected zone made no block
+            REQUIRE(two.size() == 2);    // the rejected zones made no block
             REQUIRE(two[1].time == Approx(1.0));
             REQUIRE(two[1].ramp == Approx(0.01));
             REQUIRE(two[1].state.cartesian);
             REQUIRE(two[1].state.x == Approx(0.5));
             REQUIRE(two[1].state.diffuse == Approx(0.25));
+            REQUIRE(two[1].state.zones.size() == 1);
+            REQUIRE(two[1].state.zones[0].bounds == std::vector<double>{ 150.0, -150.0, -90.0, 90.0 });
         }
 
         WHEN("the capture is written with recorded audio and read back") {
