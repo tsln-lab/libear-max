@@ -263,11 +263,49 @@ private:
             return true;
         }
         if (name == "zone") {
-            error = "zone exclusion cannot be written (not supported by libadm); ignored";
-            return false;
+            return apply_zone(s, values, error);
         }
         error = "unknown parameter: " + name;
         return false;
+    }
+
+    /// 'zone clear', 'zone polar minAz maxAz minEl maxEl' or 'zone cartesian
+    /// minX maxX minY maxY minZ maxZ', as the renderers take them; the bounds
+    /// must be within the ranges an ADM file can hold.
+    static bool apply_zone(object_state& s, const atoms& values, std::string& error)
+    {
+        if (values.empty() || !atom_is_symbol(values[0])) {
+            error = "zone needs 'polar', 'cartesian' or 'clear' as first argument";
+            return false;
+        }
+        const std::string kind = values[0];
+        if (kind == "clear") {
+            s.zones.clear();
+            return true;
+        }
+        exclusion_zone zone;
+        zone.cartesian = kind == "cartesian";
+        const size_t count = zone.cartesian ? 6 : 4;
+        if ((kind != "polar" && kind != "cartesian") || values.size() != count + 1) {
+            error = "zone: use 'zone polar minAz maxAz minEl maxEl', "
+                    "'zone cartesian minX maxX minY maxY minZ maxZ' or 'zone clear'";
+            return false;
+        }
+        for (size_t i = 0; i < count; ++i) {
+            double v = 0.0;
+            if (!number_at(values, i + 1, v, error, "zone")) return false;
+            // libadm validates the ranges of BS.2076: azimuths within +-180,
+            // elevations within +-90, Cartesian bounds within +-1
+            const double limit = zone.cartesian ? 1.0 : (i < 2 ? 180.0 : 90.0);
+            if (v < -limit || v > limit) {
+                error = zone.cartesian ? "zone cartesian bounds must be within -1..1"
+                                       : "zone polar azimuths must be within -180..180 and elevations within -90..90";
+                return false;
+            }
+            zone.bounds.push_back(v);
+        }
+        s.zones.push_back(std::move(zone));
+        return true;
     }
 
     std::vector<slot> m_slots;

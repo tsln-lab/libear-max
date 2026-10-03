@@ -292,8 +292,7 @@ RF64, which `mc.ear.play~` plays and `mc.sfplay~` cannot.
 [print]   recording / written take.wav 22 120000 / failed / position
 ```
 
-Limitations of this first version: zone exclusion is not read or written
-(libadm does not support it); muted objects, silent tracks, tracks missing
+Limitations of this first version: muted objects, silent tracks, tracks missing
 from the `chna` chunk, cartesian DirectSpeakers positions and unsupported
 types are skipped with a warning on the info outlet; `audioObject`
 importance and complementary object groups are not interpreted (every
@@ -303,6 +302,11 @@ outlet; one bed and one scene are written per file, and HOA blocks are
 static; and `ear.adm` with `mc.sfplay~` or `mc.sfrecord~`
 needs a file Max can open (RIFF, under 4 GB), where `mc.ear.play~` and
 `mc.ear.record~` do not.
+
+Upstream libadm does not read or write `zoneExclusion`, so this package builds
+against a fork, [tsln-lab/libadm](https://github.com/tsln-lab/libadm) (branch
+`zone-exclusion`), which adds the element with its Cartesian and polar zones;
+the `zone` messages of the renderers are written and read back as they are.
 
 ### ear.direct
 
@@ -518,7 +522,7 @@ source/projects/shared/ear_max_adm_capture.h capturing object, bed and scene met
 source/projects/shared/ear_max_stream.h      disk streaming of a BW64 file: reader thread and ring buffer for the audio thread
 source/projects/shared/ear_max_resample.h    windowed-sinc polyphase sample-rate conversion for the streamed audio
 source/projects/shared/ear_max_sink.h        disk writing of a BW64 file with ADM: ring buffer from the audio thread and writer thread
-source/libadm/                         libadm, the EBU ADM library (submodule)
+source/libadm/                         libadm, the EBU ADM library (submodule: the tsln-lab fork, which adds zoneExclusion)
 source/libbw64/                        libbw64, the EBU BW64 file library (submodule, header-only)
 source/projects/shared/ear_max_hoa.h   spherical harmonics in the EAR's conventions
 source/projects/shared/ear_max_dsp.h   bus_renderer: the shared N-in / L-out gain matrix with ramps and decorrelation
@@ -588,7 +592,6 @@ page is not well-formed XML.
 - Custom reproduction screens (currently the default screen is used for
   `screenref` and screen edge lock).
 - `ear.hoa`: control-rate HOA decoding matrix, and HOA `screenRef` once libear implements it.
-- ADM files: zone exclusion once libadm supports it.
 
 ## License
 

@@ -389,6 +389,15 @@ private:
         out.objects(atoms{ setvalue, n, symbol("screenref"), s.screenref ? 1 : 0 });
         out.objects(atoms{ setvalue, n, symbol("screenedgelock_h"), symbol(s.screenedgelock_h) });
         out.objects(atoms{ setvalue, n, symbol("screenedgelock_v"), symbol(s.screenedgelock_v) });
+        // the block's zones replace the previous ones: clear, then add each
+        out.objects(atoms{ setvalue, n, symbol("zone"), symbol("clear") });
+        for (const exclusion_zone& z : s.zones) {
+            atoms zone{ setvalue, n, symbol("zone"), symbol(z.cartesian ? "cartesian" : "polar") };
+            for (const double b : z.bounds) {
+                zone.push_back(b);
+            }
+            out.objects(zone);
+        }
     }
 
     loaded_file m_file;

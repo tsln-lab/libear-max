@@ -374,14 +374,18 @@ SCENARIO("ear.adm captures object messages and writes them as ADM") {
         obj.capture_at(2000.0, "cartesian", 2, atoms{ 1 });
         obj.capture_at(2000.0, "position", 2, atoms{ 0.5, 0.5, 0.0 });
         obj.capture_at(2000.0, "diffuse", 0, atoms{ 0.25 });
-        obj.capture_at(2500.0, "zone", 0, atoms{ symbol("clear") });    // not supported: ignored
-        obj.capture_at(2500.0, "azimuth", 1, atoms{ symbol("left") });  // invalid: ignored
-        obj.capture_at(3000.0, "ramp", 1, atoms{ -1.0 });                // back to the ramp attribute
+        obj.capture_at(2500.0, "zone", 1, atoms{ symbol("polar"), -30.0, 30.0, -10.0, 10.0 });
+        obj.capture_at(2500.0, "zone", 1, atoms{ symbol("cartesian"), -1.0, 1.0, -1.0, 0.0, -0.5, 0.5 });
+        obj.capture_at(2500.0, "zone", 1, atoms{ symbol("polar"), -200.0, 30.0, -10.0, 10.0 });    // out of range: ignored
+        obj.capture_at(2500.0, "zone", 2, atoms{ symbol("polar"), 0.0, 90.0 });                     // too few bounds: ignored
+        obj.capture_at(2500.0, "azimuth", 1, atoms{ symbol("left") });    // invalid: ignored
+        obj.capture_at(3000.0, "ramp", 1, atoms{ -1.0 });                  // back to the ramp attribute
         obj.capture_at(3000.0, "elevation", 1, atoms{ 20.0 });
+        obj.capture_at(3500.0, "zone", 1, atoms{ symbol("clear") });
 
         THEN("the changes are timestamped from the capture start, one block per time") {
             const auto& one = obj.captured(0);
-            REQUIRE(one.size() == 4);
+            REQUIRE(one.size() == 6);
             REQUIRE(one[0].time == Approx(0.0));
             REQUIRE(one[0].state.azimuth == Approx(30.0));
             REQUIRE(one[1].time == Approx(0.5));
@@ -392,11 +396,20 @@ SCENARIO("ear.adm captures object messages and writes them as ADM") {
             REQUIRE(one[2].time == Approx(1.0));
             REQUIRE(one[2].ramp == Approx(0.25));    // the object's ramp persists like the renderers' per-object ramp
             REQUIRE(one[2].state.diffuse == Approx(0.25));
-            REQUIRE(one[3].time == Approx(2.0));
-            REQUIRE(one[3].ramp == Approx(0.01));    // a negative ramp returned the object to the attribute (10 ms)
-            REQUIRE(one[3].state.elevation == Approx(20.0));
+            REQUIRE(one[3].time == Approx(1.5));
+            REQUIRE(one[3].state.zones.size() == 2);    // the two valid zones, the invalid ones rejected
+            REQUIRE_FALSE(one[3].state.zones[0].cartesian);
+            REQUIRE(one[3].state.zones[0].bounds == std::vector<double>{ -30.0, 30.0, -10.0, 10.0 });
+            REQUIRE(one[3].state.zones[1].cartesian);
+            REQUIRE(one[3].state.zones[1].bounds == std::vector<double>{ -1.0, 1.0, -1.0, 0.0, -0.5, 0.5 });
+            REQUIRE(one[4].time == Approx(2.0));
+            REQUIRE(one[4].ramp == Approx(0.01));    // a negative ramp returned the object to the attribute (10 ms)
+            REQUIRE(one[4].state.elevation == Approx(20.0));
+            REQUIRE(one[4].state.zones.size() == 2);    // zones persist like any parameter
+            REQUIRE(one[5].time == Approx(2.5));
+            REQUIRE(one[5].state.zones.empty());
             const auto& two = obj.captured(1);
-            REQUIRE(two.size() == 2);
+            REQUIRE(two.size() == 2);    // the rejected zone made no block
             REQUIRE(two[1].time == Approx(1.0));
             REQUIRE(two[1].ramp == Approx(0.01));
             REQUIRE(two[1].state.cartesian);
@@ -428,7 +441,7 @@ SCENARIO("ear.adm captures object messages and writes them as ADM") {
                 REQUIRE(items.objects[1].track == 1);
 
                 const auto& voice = items.objects[0].blocks;
-                REQUIRE(voice.size() == 4);
+                REQUIRE(voice.size() == 6);
                 REQUIRE(voice[0].start == Approx(0.0));
                 REQUIRE(voice[0].end == Approx(0.5));
                 REQUIRE(voice[0].state.azimuth == Approx(30.0));
@@ -439,12 +452,23 @@ SCENARIO("ear.adm captures object messages and writes them as ADM") {
                 REQUIRE(voice[1].state.elevation == Approx(10.0));
                 REQUIRE(voice[1].state.gain == Approx(0.5));
                 REQUIRE(voice[2].start == Approx(1.0));
-                REQUIRE(voice[2].end == Approx(2.0));
+                REQUIRE(voice[2].end == Approx(1.5));
                 REQUIRE(voice[2].interp == Approx(0.25));    // the object's ramp stays until it is changed
                 REQUIRE(voice[2].state.diffuse == Approx(0.25));
-                REQUIRE(voice[3].start == Approx(2.0));
-                REQUIRE(voice[3].end == Approx(2.0));    // at the end of the audio: an empty last block
-                REQUIRE(voice[3].state.elevation == Approx(20.0));
+                REQUIRE(voice[2].state.zones.empty());
+                REQUIRE(voice[3].start == Approx(1.5));
+                REQUIRE(voice[3].state.zones.size() == 2);
+                REQUIRE_FALSE(voice[3].state.zones[0].cartesian);
+                REQUIRE(voice[3].state.zones[0].bounds == std::vector<double>{ -30.0, 30.0, -10.0, 10.0 });
+                REQUIRE(voice[3].state.zones[1].cartesian);
+                REQUIRE(voice[3].state.zones[1].bounds == std::vector<double>{ -1.0, 1.0, -1.0, 0.0, -0.5, 0.5 });
+                REQUIRE(voice[4].start == Approx(2.0));
+                REQUIRE(voice[4].end == Approx(2.5));
+                REQUIRE(voice[4].state.elevation == Approx(20.0));
+                REQUIRE(voice[4].state.zones.size() == 2);
+                REQUIRE(voice[5].start == Approx(2.5));
+                REQUIRE(voice[5].end == Approx(2.5));    // past the end of the audio: an empty last block
+                REQUIRE(voice[5].state.zones.empty());    // the clear
 
                 const auto& second = items.objects[1].blocks;
                 REQUIRE(second.size() == 2);
@@ -461,6 +485,18 @@ SCENARIO("ear.adm captures object messages and writes them as ADM") {
                 const auto objects = messages(reader, k_objects);
                 REQUIRE(objects.front() == "setvalue 1 ramp 250");
                 REQUIRE(contains(objects, "setvalue 1 position -30 10 1"));
+                REQUIRE(contains(objects, "setvalue 1 zone clear"));    // a block without zones clears them
+                REQUIRE(count_prefix(objects, "setvalue 1 zone ") == 1);
+            }
+
+            THEN("the written file plays back the zones as the renderers' messages") {
+                c74::max::object_getoutput(reader, k_objects)->clear();
+                reader.time(atoms{ 1500.0 });
+                const auto objects = messages(reader, k_objects);
+                REQUIRE(contains(objects, "setvalue 1 zone clear"));
+                REQUIRE(contains(objects, "setvalue 1 zone polar -30 30 -10 10"));
+                REQUIRE(contains(objects, "setvalue 1 zone cartesian -1 1 -1 0 -0.5 0.5"));
+                REQUIRE(count_prefix(objects, "setvalue 1 zone ") == 3);
             }
         }
 
@@ -476,6 +512,9 @@ SCENARIO("ear.adm captures object messages and writes them as ADM") {
                 REQUIRE(xml.str().find("audioFormatExtended") != std::string::npos);
                 REQUIRE(xml.str().find("audioObjectName=\"voice\"") != std::string::npos);
                 REQUIRE(xml.str().find("interpolationLength") != std::string::npos);
+                REQUIRE(xml.str().find("<zoneExclusion>") != std::string::npos);
+                REQUIRE(xml.str().find("minAzimuth=\"-30") != std::string::npos);
+                REQUIRE(xml.str().find("maxZ=\"0.5") != std::string::npos);
             }
         }
 
