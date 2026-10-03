@@ -3,7 +3,7 @@
 <c74object name='ear.hoa' category='spatial audio, ADM, ambisonics'>
 
 	<digest>Calculate the decoding matrix of an ambisonic scene (ADM HOA) for a BS.2051 loudspeaker layout with libear (ITU-R BS.2127): the gains mc.ear.hoa~ applies, as lists</digest>
-	<description>Calculate the decoding matrix of an ambisonic scene (ADM HOA) for a BS.2051 loudspeaker layout with libear (ITU-R BS.2127): the gains mc.ear.hoa~ applies, as lists. The scene's components are in ACN order (W Y Z X ... for first order), SN3D by default; the decoder is the EAR's AllRAD design for the layout. Outputs one list per component (its channel number followed by a gain per loudspeaker, ready for coll) and the whole matrix as matrix~ messages (input output gain).</description>
+	<description>Calculate the decoding matrix of an ambisonic scene (ADM HOA) for a BS.2051 loudspeaker layout with libear (ITU-R BS.2127): the gains mc.ear.hoa~ applies, as lists. The scene's components are in ACN order (W Y Z X ... for first order), SN3D by default; the decoder is the EAR's AllRAD design for the layout. Outputs one list per component (its channel number followed by a gain per loudspeaker, ready for coll) and the whole matrix as matrix~ messages (input output gain); both outlets send 'clear' first, so a smaller matrix leaves nothing of a larger one behind.</description>
 
 	<!--METADATA-->
 

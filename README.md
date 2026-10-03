@@ -113,8 +113,8 @@ without mc objects. The right outlet answers `components` (the order and degree 
 ACN channel), `channels`, `positions` and `layouts`. The matrix is output
 whenever `layout`, `order` or `normalization` changes (`@autocalc 1`) or on
 `bang`; nothing is output when the object is created, so use `loadbang` for
-the initial matrix. The `matrix~` messages start with `clear`, so entries
-of a previous order are removed.
+the initial matrix. Both outlets send `clear` before the matrix, so `coll`
+and `matrix~` keep nothing of a previous order or layout.
 
 ### mc.ear.encode~
 

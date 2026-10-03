@@ -381,7 +381,7 @@
 						560.0,
 						20.0
 					],
-					"text": "\u2190 one list per component: channel number, then a gain per loudspeaker (stored as a row)",
+					"text": "\u2190 'clear', then one list per component: channel number, then a gain per loudspeaker (stored as a row)",
 					"numinlets": 1,
 					"numoutlets": 0
 				}
@@ -393,13 +393,17 @@
 					"patching_rect": [
 						15.0,
 						250.0,
-						90.0,
+						100.0,
 						22.0
 					],
-					"text": "matrix~ 4 6",
-					"numinlets": 4,
-					"numoutlets": 6,
+					"text": "matrix~ 16 10",
+					"numinlets": 16,
+					"numoutlets": 10,
 					"outlettype": [
+						"signal",
+						"signal",
+						"signal",
+						"signal",
 						"signal",
 						"signal",
 						"signal",
@@ -414,12 +418,12 @@
 					"id": "obj-20",
 					"maxclass": "comment",
 					"patching_rect": [
-						115.0,
+						125.0,
 						250.0,
-						620.0,
+						640.0,
 						20.0
 					],
-					"text": "\u2190 'clear', then the matrix as matrix~ messages (input output gain): a decoder without mc, for first order to 0+5+0",
+					"text": "\u2190 'clear', then the matrix as matrix~ messages (input output gain): a decoder without mc; 16 inputs and 10 outputs fit every setting shown here (order 3, 4+5+0)",
 					"numinlets": 1,
 					"numoutlets": 0
 				}

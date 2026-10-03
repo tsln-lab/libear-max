@@ -94,16 +94,19 @@ SCENARIO("ear.hoa outputs the decoding matrix of an ambisonic scene") {
             const auto entries = lists(obj, k_matrix);
             const auto expected = reference_matrix("0+5+0", 1, "SN3D");
 
-            THEN("one list per component carries its channel number and a gain per loudspeaker, as libear computes them") {
-                REQUIRE(rows.size() == 4);
+            THEN("after 'clear', one list per component carries its channel number and a gain per loudspeaker, as libear computes them") {
+                REQUIRE(rows.size() == 1 + 4);
+                REQUIRE(rows.front().empty());    // 'clear' carries no numbers
+                REQUIRE(c74::max::object_getoutput(obj, k_rows)->front().front().a_type == c74::max::A_SYM);
                 for (size_t i = 0; i < 4; ++i) {
-                    REQUIRE(rows[i].size() == 1 + k_channels_050);
-                    REQUIRE(rows[i][0] == Approx(static_cast<double>(i + 1)));
+                    const auto& row = rows[1 + i];
+                    REQUIRE(row.size() == 1 + k_channels_050);
+                    REQUIRE(row[0] == Approx(static_cast<double>(i + 1)));
                     for (size_t ch = 0; ch < k_channels_050; ++ch) {
-                        REQUIRE(rows[i][1 + ch] == Approx(expected[i][ch]));
+                        REQUIRE(row[1 + ch] == Approx(expected[i][ch]));
                         REQUIRE(obj.gains(i)[ch] == Approx(expected[i][ch]));
                     }
-                    REQUIRE(rows[i][1 + k_lfe] == Approx(0.0).margin(1e-9));    // the LFE stays silent
+                    REQUIRE(row[1 + k_lfe] == Approx(0.0).margin(1e-9));    // the LFE stays silent
                 }
             }
 
@@ -129,12 +132,12 @@ SCENARIO("ear.hoa outputs the decoding matrix of an ambisonic scene") {
             THEN("the 16 components are output at once, as the attribute changed") {
                 REQUIRE(obj.input_count() == 16);
                 const auto rows = lists(obj, k_rows);
-                REQUIRE(rows.size() == 16);
-                REQUIRE(rows[15][0] == Approx(16.0));
+                REQUIRE(rows.size() == 1 + 16);
+                REQUIRE(rows[16][0] == Approx(16.0));
                 REQUIRE(lists(obj, k_matrix).size() == 1 + 16 * k_channels_050);
                 const auto expected = reference_matrix("0+5+0", 3, "SN3D");
                 for (size_t ch = 0; ch < k_channels_050; ++ch) {
-                    REQUIRE(rows[15][1 + ch] == Approx(expected[15][ch]));
+                    REQUIRE(rows[16][1 + ch] == Approx(expected[15][ch]));
                 }
             }
         }
@@ -167,11 +170,11 @@ SCENARIO("ear.hoa outputs the decoding matrix of an ambisonic scene") {
             THEN("each component has two gains") {
                 REQUIRE(obj.channel_count() == 2);
                 const auto rows = lists(obj, k_rows);
-                REQUIRE(rows.size() == 4);
-                REQUIRE(rows[0].size() == 3);
+                REQUIRE(rows.size() == 1 + 4);
+                REQUIRE(rows[1].size() == 3);
                 const auto expected = reference_matrix("0+2+0", 1, "SN3D");
-                REQUIRE(rows[0][1] == Approx(expected[0][0]));
-                REQUIRE(rows[0][2] == Approx(expected[0][1]));
+                REQUIRE(rows[1][1] == Approx(expected[0][0]));
+                REQUIRE(rows[1][2] == Approx(expected[0][1]));
             }
         }
 
@@ -182,7 +185,7 @@ SCENARIO("ear.hoa outputs the decoding matrix of an ambisonic scene") {
             THEN("a change outputs nothing until a bang") {
                 REQUIRE(c74::max::object_getoutput(obj, k_rows)->empty());
                 obj.bang();
-                REQUIRE(lists(obj, k_rows).size() == 9);
+                REQUIRE(lists(obj, k_rows).size() == 1 + 9);
             }
         }
 

@@ -16,7 +16,8 @@ public:
                      "with libear (ITU-R BS.2127): the gains mc.ear.hoa~ applies, as lists. The scene's components are "
                      "in ACN order (W Y Z X ... for first order), SN3D by default; the decoder is the EAR's AllRAD design "
                      "for the layout. Outputs one list per component (its channel number followed by a gain per "
-                     "loudspeaker, ready for coll) and the whole matrix as matrix~ messages (input output gain)." };
+                     "loudspeaker, ready for coll) and the whole matrix as matrix~ messages (input output gain); "
+                     "both outlets send 'clear' first, so a smaller matrix leaves nothing of a larger one behind." };
     MIN_TAGS{ "spatial audio, ADM, ambisonics" };
     MIN_AUTHOR{ "tsln-lab" };
     MIN_RELATED{ "mc.ear.hoa~, ear.objects, ear.direct" };
@@ -37,7 +38,7 @@ public:
     std::string m_normalization{ "SN3D" };
 
     inlet<> in_main{ this, "(bang) calculate and output; (order, normalization, layout) attributes" };
-    outlet<> out_rows{ this, "(list) per ambisonic component: its channel number, then a gain per loudspeaker" };
+    outlet<> out_rows{ this, "(clear, then list) per ambisonic component: its channel number, then a gain per loudspeaker" };
     outlet<> out_matrix{ this, "(clear, then list) the matrix as matrix~ messages: input output gain, one per entry" };
     outlet<> out_info{ this, "(anything) components, channels, positions, layouts" };
 
@@ -206,15 +207,17 @@ public:
         }
     }
 
-    /// Send the matrix: the matrix~ messages from the middle outlet first
-    /// ('clear', so that the entries of a previous size are gone, then every
-    /// entry), then one list per component from the left outlet (right to left).
+    /// Send the matrix: the matrix~ messages from the middle outlet first,
+    /// then one list per component from the left outlet (right to left).
+    /// Both start with 'clear', so that the entries or rows of a previous
+    /// size (a higher order, a larger layout) are gone from matrix~ or coll.
     void calculate()
     {
         if (m_matrix.empty()) {
             return;
         }
         out_matrix.send(atoms{ symbol("clear") });
+        out_rows.send(atoms{ symbol("clear") });
         for (size_t i = 0; i < m_matrix.size(); ++i) {
             for (size_t ch = 0; ch < m_matrix[i].size(); ++ch) {
                 out_matrix.send(atoms{ static_cast<int>(i), static_cast<int>(ch), m_matrix[i][ch] });
