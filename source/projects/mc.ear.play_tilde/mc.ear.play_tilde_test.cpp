@@ -331,6 +331,33 @@ SCENARIO("mc.ear.play~ converts a file at another sample rate to the audio's") {
             }
         }
 
+        WHEN("it loops") {
+            obj.loop = true;
+            obj.start();
+            REQUIRE(obj.wait_ready(k_ready_timeout_ms));
+            // the file is exactly 150 vectors at 48 kHz: play up to the last one
+            for (int vector = 1; vector <= 149; ++vector) {
+                obj(io.input(), io.output());
+                obj.flush();
+            }
+            clear_outputs(obj);
+            int emitted_after = -1;
+            for (int vector = 0; vector <= 40; ++vector) {    // vector 0 is the file's last: the wrap
+                obj(io.input(), io.output());
+                obj.flush();
+                if (emitted_after < 0 && count_prefix(messages(obj, k_objects), "setvalue 1 ramp 10") > 0) {
+                    emitted_after = vector;
+                }
+            }
+            THEN("the second lap starts over as a jump and its block at 20 ms is emitted one vector ahead again") {
+                const auto objects = messages(obj, k_objects);
+                REQUIRE(objects.front() == "setvalue 1 ramp 0");    // the wrap: the first block again
+                REQUIRE(contains(objects, "setvalue 1 position 30 0 1"));
+                REQUIRE(emitted_after == 14);    // not at once because the lap counter runs past the file's length
+                REQUIRE(obj.current_time() < 0.2);
+            }
+        }
+
         WHEN("it is moved into the file") {
             obj.start();
             obj.seek(atoms{ 100.0 });

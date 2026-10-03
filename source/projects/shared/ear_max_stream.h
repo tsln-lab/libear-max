@@ -200,12 +200,19 @@ public:
     }
 
     /// The file frame the playback reaches after `output_frames` more
-    /// output frames, from the exact output position (not clamped or
-    /// wrapped: for comparing with a block boundary within the file).
+    /// output frames, from the exact output position, on the lap being
+    /// played when looping (for comparing with a block boundary on the
+    /// file's clock; a vector that crosses the wrap compares on the new
+    /// lap, where the wrap itself re-emits the metadata).
     uint64_t play_frame_after(long output_frames) const
     {
         const double out = static_cast<double>(m_play_out.load(std::memory_order_acquire) + static_cast<uint64_t>(std::max(0L, output_frames)));
-        return m_origin_file.load(std::memory_order_acquire) + static_cast<uint64_t>(std::floor(out * m_step.load(std::memory_order_acquire)));
+        uint64_t frame = m_origin_file.load(std::memory_order_acquire) + static_cast<uint64_t>(std::floor(out * m_step.load(std::memory_order_acquire)));
+        const uint64_t total = m_frames.load();
+        if (m_loop.load() && total > 0 && frame >= total) {
+            frame %= total;
+        }
+        return frame;
     }
 
     /// The playback reached the end of the file (without looping).
