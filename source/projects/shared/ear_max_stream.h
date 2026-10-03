@@ -195,6 +195,15 @@ public:
         return m_play_frame.load(std::memory_order_acquire);
     }
 
+    /// The file frame the playback reaches after `output_frames` more
+    /// output frames, from the exact output position (not clamped or
+    /// wrapped: for comparing with a block boundary within the file).
+    uint64_t play_frame_after(long output_frames) const
+    {
+        const double out = static_cast<double>(m_play_out.load(std::memory_order_acquire) + static_cast<uint64_t>(std::max(0L, output_frames)));
+        return m_origin_file.load(std::memory_order_acquire) + static_cast<uint64_t>(std::floor(out * m_step.load(std::memory_order_acquire)));
+    }
+
     /// The playback reached the end of the file (without looping).
     bool ended() const
     {
@@ -264,8 +273,10 @@ private:
             m_read_total.store(read_total + static_cast<uint64_t>(n), std::memory_order_release);
             // the file frame the next output frame comes from: the output
             // frames pulled since the reset, scaled to file frames
-            m_play_out += static_cast<uint64_t>(n);
-            uint64_t play = m_origin_file + static_cast<uint64_t>(std::floor(static_cast<double>(m_play_out) * m_step.load(std::memory_order_relaxed)));
+            const uint64_t play_out = m_play_out.load(std::memory_order_relaxed) + static_cast<uint64_t>(n);
+            m_play_out.store(play_out, std::memory_order_release);
+            uint64_t play = m_origin_file.load(std::memory_order_relaxed)
+                            + static_cast<uint64_t>(std::floor(static_cast<double>(play_out) * m_step.load(std::memory_order_relaxed)));
             const uint64_t total = m_frames.load();
             if (total > 0 && play >= total) {
                 if (m_loop.load()) {
@@ -353,10 +364,10 @@ private:
             const uint32_t out_rate = m_out_rate.load();
             m_resampler.configure(file_rate, out_rate == 0 ? file_rate : out_rate, m_ring_channels);
             m_step.store(m_resampler.step(), std::memory_order_relaxed);
-            m_origin_file = std::min(frame, m_frames.load());
-            m_play_out = 0;
+            m_origin_file.store(std::min(frame, m_frames.load()), std::memory_order_relaxed);
+            m_play_out.store(0, std::memory_order_relaxed);
             m_laps = 0;
-            m_play_frame.store(m_origin_file, std::memory_order_release);
+            m_play_frame.store(m_origin_file.load(std::memory_order_relaxed), std::memory_order_release);
         }
         if (!m_reader) {
             return;
@@ -442,6 +453,7 @@ private:
             }
             m_eof_total.store(k_no_frame, std::memory_order_release);    // looping was turned on at the end: go on from the start
             m_flushed = false;
+            m_resampler.reset();    // the tail flushed at the end is not the history of the new lap
         }
         {
             // room for what a chunk becomes at the output rate
@@ -519,8 +531,8 @@ private:
     std::atomic<uint64_t> m_write_total{ 0 };
     std::atomic<uint64_t> m_eof_total{ k_no_frame };    ///< write position at which the file ended
     std::atomic<uint64_t> m_play_frame{ 0 };
-    uint64_t m_origin_file{ 0 };    ///< file frame the ring starts at (audio thread reads, after the reset)
-    uint64_t m_play_out{ 0 };       ///< output frames pulled since the reset (audio thread)
+    std::atomic<uint64_t> m_origin_file{ 0 };    ///< file frame the ring starts at
+    std::atomic<uint64_t> m_play_out{ 0 };       ///< output frames pulled since the reset
     uint64_t m_laps{ 0 };           ///< times the file end was passed while looping
     std::atomic<double> m_step{ 1.0 };    ///< file frames per output frame
     std::atomic<bool> m_ready{ false };

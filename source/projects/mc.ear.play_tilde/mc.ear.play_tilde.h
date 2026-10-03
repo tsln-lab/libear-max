@@ -268,7 +268,7 @@ public:
         const uint64_t after = m_stream.play_frame();
         const uint64_t next = m_next_boundary.load(std::memory_order_acquire);
         const bool ended = m_stream.ready() && m_stream.ended();    // not a stale end while a seek is pending
-        if (after < before || ended || (next != admio::bw64_stream::k_no_frame && after + file_frames(frames) >= next)) {
+        if (after < before || ended || (next != admio::bw64_stream::k_no_frame && m_stream.play_frame_after(frames) >= next)) {
             m_queue.set();
         }
     }
@@ -422,11 +422,6 @@ private:
         }
     }
 
-    /// the file frames `output_frames` output frames cover, rounded up
-    uint64_t file_frames(long output_frames) const
-    {
-        return static_cast<uint64_t>(std::ceil(static_cast<double>(output_frames) * m_stream.ratio()));
-    }
 
     /// move the playback and the metadata to `seconds`
     void locate(double seconds)
@@ -477,7 +472,7 @@ private:
             double time = now;
             const uint64_t next = m_next_boundary.load(std::memory_order_acquire);
             const uint64_t frame = m_stream.play_frame();
-            if (next != admio::bw64_stream::k_no_frame && frame + file_frames(m_vector) >= next) {
+            if (next != admio::bw64_stream::k_no_frame && m_stream.play_frame_after(m_vector) >= next) {
                 time = std::max(time, static_cast<double>(next) / sr);
             }
             m_player.set_position(time);
