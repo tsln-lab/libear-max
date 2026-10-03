@@ -503,6 +503,8 @@ SCENARIO("ear.adm captures a timed bed and plays its blocks back") {
         obj.direct_at(1500.0, atoms{ symbol("setvalue"), 1, symbol("bounds"), 40.0, 50.0, -5.0, 5.0 });    // same time: one block
         obj.direct_at(2000.0, atoms{ symbol("setvalue"), 2, symbol("speakerlabel"), symbol("M-045") });
         obj.direct_at(2500.0, atoms{ symbol("setvalue"), 2, symbol("lfe"), 1 });    // channel-level: no block
+        obj.direct_at(2600.0, atoms{ symbol("setvalue"), 1, symbol("position"), 45.0, 0.0 });    // unchanged: no block
+        obj.direct_at(2700.0, atoms{ symbol("setvalue"), 2, symbol("speakerlabel"), symbol("M-045") });    // unchanged: no block
         obj.stop();
 
         THEN("each channel has a block per change, the first at the capture start") {
@@ -572,6 +574,29 @@ SCENARIO("ear.adm captures a timed bed and plays its blocks back") {
                 reader.time(atoms{ 0.0 });
                 REQUIRE(contains(messages(reader, k_direct), "setvalue 1 position 30 0 1"));
             }
+        }
+    }
+}
+
+SCENARIO("ear.adm keeps a bed static when its metadata is only repeated") {
+    ext_main(nullptr);
+
+    GIVEN("an instance capturing a bed whose layout and parameters are sent again unchanged") {
+        test_wrapper<ear_adm> an_instance;
+        ear_adm& obj = an_instance;
+        obj.directchans = 2;
+        obj.direct(atoms{ symbol("inputlayout"), symbol("0+2+0") });
+        obj.begin_capture_at(1000.0);
+        obj.direct_at(1500.0, atoms{ symbol("inputlayout"), symbol("0+2+0") });
+        obj.direct_at(2000.0, atoms{ symbol("setvalue"), 1, symbol("speakerlabel"), symbol("M+030") });
+        obj.direct_at(2500.0, atoms{ symbol("applyvalues"), symbol("azimuth"), 30.0, -30.0 });
+        obj.stop();
+        THEN("each channel keeps its single block and the bed still references the layout") {
+            REQUIRE(obj.bed().blocks(0).size() == 1);
+            REQUIRE(obj.bed().blocks(1).size() == 1);
+            const auto bed = obj.bed().bed();
+            REQUIRE(!bed.channels[0].timed());
+            REQUIRE(bed.channels[0].pack_id == "AP_00010002");
         }
     }
 }

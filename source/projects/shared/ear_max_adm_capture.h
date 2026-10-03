@@ -466,6 +466,12 @@ private:
         return b;
     }
 
+    static bool same_values(const captured_direct_block& a, const captured_direct_block& b)
+    {
+        return a.labels == b.labels && a.has_position == b.has_position && a.azimuth == b.azimuth && a.elevation == b.elevation
+               && a.distance == b.distance && a.bounds == b.bounds;
+    }
+
     void record_change(size_t i, double time)
     {
         if (!m_capturing || i >= m_blocks.size()) {
@@ -477,6 +483,9 @@ private:
         if (!blocks.empty() && std::abs(blocks.back().time - t) < 1e-6) {
             blocks.back() = b;    // several parameters at the same time: one block
             return;
+        }
+        if (!blocks.empty() && same_values(blocks.back(), b)) {
+            return;    // the same metadata sent again (patches repeat it): not a change
         }
         blocks.push_back(std::move(b));
     }
