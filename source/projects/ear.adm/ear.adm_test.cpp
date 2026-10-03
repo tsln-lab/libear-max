@@ -489,4 +489,186 @@ SCENARIO("ear.adm captures object messages and writes them as ADM") {
     }
 }
 
+SCENARIO("ear.adm writes a DirectSpeakers bed and an HOA scene after the objects") {
+    ext_main(nullptr);
+
+    GIVEN("an instance with one object, a 5.1 bed and a first-order scene") {
+        test_wrapper<ear_adm> an_instance;
+        ear_adm& obj = an_instance;
+        obj.chans = 1;
+        obj.directchans = 6;
+        obj.hoa(atoms{ symbol("order"), 1 });
+        obj.hoa(atoms{ symbol("normalization"), symbol("N3D") });
+        obj.hoa(atoms{ symbol("name"), symbol("ambience") });
+        obj.direct(atoms{ symbol("tracks"), 2, 3 });    // from a reading ear.adm: ignored
+        obj.direct(atoms{ symbol("inputlayout"), symbol("0+5+0") });
+        obj.direct(atoms{ symbol("name"), symbol("music") });
+        obj.setvalue(atoms{ 1, symbol("azimuth"), 30.0 });
+
+        THEN("the bed and scene are captured as mc.ear.direct~ and mc.ear.hoa~ would take them") {
+            REQUIRE(static_cast<int>(obj.hoaorder) == 1);
+            REQUIRE(obj.scene().normalization == "N3D");
+            REQUIRE(obj.scene().channels() == 4);
+            REQUIRE(obj.scene().name == "ambience");
+            REQUIRE(obj.bed().size() == 6);
+            REQUIRE(obj.bed().at(3).dstm.speakerLabels == std::vector<std::string>{ "LFE1" });
+            REQUIRE(static_cast<bool>(obj.bed().at(3).dstm.channelFrequency.lowPass));
+            REQUIRE(obj.bed().at(4).position.azimuth == Approx(110.0));
+            REQUIRE(*obj.bed().at(0).dstm.audioPackFormatID == "AP_00010003");
+        }
+
+        WHEN("the capture is written with 11 tracks of audio and read back") {
+            const std::string audio = write_audio("bed_audio.wav", 11, 4800);
+            const std::string out = std::string(EARMAX_TEST_OUT_DIR) + "/bed.wav";
+            std::remove(out.c_str());
+            obj.write(atoms{ symbol(out), symbol(audio) });
+            REQUIRE(contains(messages(obj, k_info), "written " + out + " 11 4800"));
+
+            test_wrapper<ear_adm> another_instance;
+            ear_adm& reader = another_instance;
+            reader.read(atoms{ symbol(out) });
+            REQUIRE(reader.loaded());
+            const auto& items = reader.items();
+
+            THEN("the object comes first, the bed references the common definitions layout, the scene follows") {
+                REQUIRE(items.warnings.empty());
+                REQUIRE(items.objects.size() == 1);
+                REQUIRE(items.objects[0].track == 0);
+                REQUIRE(items.direct.size() == 6);
+                for (size_t i = 0; i < 6; ++i) {
+                    REQUIRE(items.direct[i].track == static_cast<int>(i + 1));
+                    REQUIRE(items.direct[i].name == "music");
+                    REQUIRE(items.direct[i].pack_id == "AP_00010003");
+                }
+                // the common definitions carry the labels in their URN form (libear takes both)
+                REQUIRE(items.direct[0].labels == std::vector<std::string>{ "urn:itu:bs:2051:0:speaker:M+030" });
+                REQUIRE(items.direct[0].has_position);
+                REQUIRE(items.direct[0].azimuth == Approx(30.0));
+                REQUIRE(items.direct[3].labels == std::vector<std::string>{ "urn:itu:bs:2051:0:speaker:LFE" });    // the layout's LFE1
+                REQUIRE(items.direct[3].lfe);
+                REQUIRE(items.hoa.size() == 1);
+                REQUIRE(items.hoa[0].name == "ambience");
+                REQUIRE(items.hoa[0].order == 1);
+                REQUIRE(items.hoa[0].normalization == "N3D");
+                REQUIRE(items.hoa[0].complete);
+                REQUIRE(items.hoa[0].tracks == std::vector<int>{ 7, 8, 9, 10 });
+                REQUIRE(contains(messages(reader, k_direct), "setvalue 4 speakerlabel urn:itu:bs:2051:0:speaker:LFE"));
+                REQUIRE(contains(messages(reader, k_direct), "setvalue 4 lfe 1"));
+                REQUIRE(contains(messages(reader, k_hoa), "order 1"));
+                REQUIRE(contains(messages(reader, k_hoa), "normalization N3D"));
+                REQUIRE(contains(messages(reader, k_hoa), "tracks 8 9 10 11"));
+            }
+        }
+
+        WHEN("the audio has fewer tracks than captured") {
+            const std::string audio = write_audio("bed_audio_short.wav", 9, 4800);
+            const std::string out = std::string(EARMAX_TEST_OUT_DIR) + "/bed_short.wav";
+            std::remove(out.c_str());
+            obj.write(atoms{ symbol(out), symbol(audio) });
+            THEN("the objects and the bed are written and the incomplete scene is dropped") {
+                REQUIRE(contains(messages(obj, k_info), "written " + out + " 7 4800"));
+                const auto items = admio::select_items(admio::load_file(out));
+                REQUIRE(items.objects.size() == 1);
+                REQUIRE(items.direct.size() == 6);
+                REQUIRE(items.hoa.empty());
+            }
+        }
+
+        WHEN("the bed is given custom channels instead of a layout") {
+            obj.directchans = 2;
+            obj.direct(atoms{ symbol("setvalue"), 1, symbol("speakerlabel"), symbol("M+045"), symbol("M+030") });
+            obj.direct(atoms{ symbol("setvalue"), 1, symbol("position"), 45.0, 0.0 });
+            obj.direct(atoms{ symbol("setvalue"), 1, symbol("bounds"), 30.0, 60.0, -5.0, 5.0 });
+            obj.direct(atoms{ symbol("applyvalues"), symbol("lfe"), 0, 1 });
+            obj.direct(atoms{ symbol("setvalue"), 2, symbol("speakerlabel"), symbol("LFE1") });
+            obj.direct(atoms{ symbol("packformat"), symbol("none") });
+            obj.hoa(atoms{ symbol("order"), -1 });
+            const std::string audio = write_audio("bed_custom_audio.wav", 3, 4800);
+            const std::string out = std::string(EARMAX_TEST_OUT_DIR) + "/bed_custom.wav";
+            std::remove(out.c_str());
+            obj.write(atoms{ symbol(out), symbol(audio) });
+            THEN("the bed is written with its own channel formats and reads back the same") {
+                REQUIRE(contains(messages(obj, k_info), "written " + out + " 3 4800"));
+                const auto items = admio::select_items(admio::load_file(out));
+                REQUIRE(items.direct.size() == 2);
+                REQUIRE(items.direct[0].labels == std::vector<std::string>{ "M+045", "M+030" });
+                REQUIRE(items.direct[0].has_position);
+                REQUIRE(items.direct[0].azimuth == Approx(45.0));
+                REQUIRE(items.direct[0].bounds == std::vector<double>{ 30.0, 60.0, -5.0, 5.0 });
+                REQUIRE(!items.direct[0].lfe);
+                REQUIRE(items.direct[0].pack_id.rfind("AP_0001", 0) == 0);
+                REQUIRE(items.direct[0].pack_id != "AP_00010003");
+                REQUIRE(items.direct[1].labels == std::vector<std::string>{ "LFE1" });
+                REQUIRE(items.direct[1].azimuth == Approx(-30.0));    // kept from the layout given before
+                REQUIRE(items.direct[1].lfe);
+                REQUIRE(items.hoa.empty());
+            }
+        }
+
+        WHEN("a read bed with URN labels is captured again") {
+            obj.directchans = 2;
+            obj.hoa(atoms{ symbol("order"), -1 });
+            obj.direct(atoms{ symbol("inputlayout"), symbol("0+2+0") });
+            obj.direct(atoms{ symbol("setvalue"), 1, symbol("speakerlabel"), symbol("urn:itu:bs:2051:0:speaker:M+030") });
+            obj.direct(atoms{ symbol("setvalue"), 2, symbol("speakerlabel"), symbol("urn:itu:bs:2051:1:speaker:M-030") });
+            const std::string audio = write_audio("bed_urn_audio.wav", 3, 4800);
+            const std::string out = std::string(EARMAX_TEST_OUT_DIR) + "/bed_urn.wav";
+            std::remove(out.c_str());
+            obj.write(atoms{ symbol(out), symbol(audio) });
+            THEN("the bed still references the common definitions layout") {
+                const auto items = admio::select_items(admio::load_file(out));
+                REQUIRE(items.direct.size() == 2);
+                REQUIRE(items.direct[1].pack_id == "AP_00010002");
+            }
+        }
+
+        WHEN("a packformat is set that the labels do not fit") {
+            obj.directchans = 2;
+            obj.direct(atoms{ symbol("inputlayout"), symbol("0+2+0") });
+            obj.direct(atoms{ symbol("setvalue"), 2, symbol("speakerlabel"), symbol("M+030") });    // twice the same label
+            obj.hoa(atoms{ symbol("order"), -1 });
+            const std::string audio = write_audio("bed_fallback_audio.wav", 3, 4800);
+            const std::string out = std::string(EARMAX_TEST_OUT_DIR) + "/bed_fallback.wav";
+            std::remove(out.c_str());
+            obj.write(atoms{ symbol(out), symbol(audio) });
+            THEN("the bed falls back to its own channel formats") {
+                const auto items = admio::select_items(admio::load_file(out));
+                REQUIRE(items.direct.size() == 2);
+                REQUIRE(items.direct[1].labels == std::vector<std::string>{ "M+030" });
+                REQUIRE(items.direct[1].pack_id != "AP_00010002");
+                REQUIRE(items.direct[1].pack_id.rfind("AP_0001", 0) == 0);
+            }
+        }
+
+        WHEN("a label from another layout is given with the packformat") {
+            obj.directchans = 2;
+            obj.direct(atoms{ symbol("inputlayout"), symbol("0+2+0") });
+            obj.direct(atoms{ symbol("setvalue"), 2, symbol("speakerlabel"), symbol("M+110") });    // not in 0+2+0
+            obj.hoa(atoms{ symbol("order"), -1 });
+            const std::string audio = write_audio("bed_other_audio.wav", 3, 4800);
+            const std::string out = std::string(EARMAX_TEST_OUT_DIR) + "/bed_other.wav";
+            std::remove(out.c_str());
+            obj.write(atoms{ symbol(out), symbol(audio) });
+            THEN("the bed is written with its own channel formats, keeping the label") {
+                const auto items = admio::select_items(admio::load_file(out));
+                REQUIRE(items.direct.size() == 2);
+                REQUIRE(items.direct[1].labels == std::vector<std::string>{ "M+110" });
+                REQUIRE(items.direct[1].pack_id != "AP_00010002");
+            }
+        }
+
+        WHEN("invalid bed and scene messages are sent") {
+            obj.direct(atoms{ symbol("setvalue"), 9, symbol("lfe"), 1 });
+            obj.direct(atoms{ symbol("inputlayout"), symbol("9+10+3") });    // more channels than the bed has
+            obj.hoa(atoms{ symbol("order"), 12 });
+            obj.hoa(atoms{ symbol("normalization"), symbol("MaxN") });
+            THEN("they are rejected and the capture is unchanged") {
+                REQUIRE(obj.bed().at(0).dstm.speakerLabels == std::vector<std::string>{ "M+030" });
+                REQUIRE(obj.scene().order == 1);
+                REQUIRE(obj.scene().normalization == "N3D");
+            }
+        }
+    }
+}
+
 EARMAX_TEST_GENERATE_MAXREF(ear_adm, "ear.adm")

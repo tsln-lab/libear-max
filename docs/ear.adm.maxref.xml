@@ -3,7 +3,7 @@
 <c74object name='ear.adm' category='spatial audio, ADM, files'>
 
 	<digest>Read and write ADM files (BW64 with ADM metadata) alongside the renderers. 'read' loads a file's ADM, reports its rendering items and which file tracks carry them, and 'time', 'start' or 'seek' emit the metadata of the Objects items as mc.ear.objects~ messages with the EAR's interpolation rules (a 'setvalue N ramp' message precedes each block)</digest>
-	<description>Read and write ADM files (BW64 with ADM metadata) alongside the renderers. 'read' loads a file's ADM, reports its rendering items and which file tracks carry them, and 'time', 'start' or 'seek' emit the metadata of the Objects items as mc.ear.objects~ messages with the EAR's interpolation rules (a 'setvalue N ramp' message precedes each block). DirectSpeakers beds and HOA scenes are emitted as mc.ear.direct~ and mc.ear.hoa~ messages when the file is read. For writing, 'record' captures the object messages sent to this object, and 'write' combines the captured timeline with an audio file recorded by mc.sfrecord~ into a BW64 file with ADM metadata.</description>
+	<description>Read and write ADM files (BW64 with ADM metadata) alongside the renderers. 'read' loads a file's ADM, reports its rendering items and which file tracks carry them, and 'time', 'start' or 'seek' emit the metadata of the Objects items as mc.ear.objects~ messages with the EAR's interpolation rules (a 'setvalue N ramp' message precedes each block). DirectSpeakers beds and HOA scenes are emitted as mc.ear.direct~ and mc.ear.hoa~ messages when the file is read. For writing, 'record' captures the object messages sent to this object, 'direct ...' and 'hoa ...' take the bed and scene metadata in the mc.ear.direct~ and mc.ear.hoa~ formats (written after the objects' tracks), and 'write' combines the captured metadata with an audio file recorded by mc.sfrecord~ into a BW64 file with ADM metadata.</description>
 
 	<!--METADATA-->
 
@@ -38,12 +38,41 @@
 			<description>Set the <at>chans</at> attribute. Number of objects captured for writing (one per audio track of the file written).</description>
 		</method>
 		<method name='clear'>
-			<digest>Discard the captured timeline and reset every object's parameters</digest>
-			<description>Discard the captured timeline and reset every object's parameters.</description>
+			<digest>Discard the captured timeline and reset every object's and bed channel's parameters</digest>
+			<description>Discard the captured timeline and reset every object's and bed channel's parameters.</description>
+		</method>
+		<method name='direct'>
+			<digest>Metadata of the bed written after the objects (see the directchans attribute), in the mc.ear.direct~ format: 'direct setvalue N speakerlabel M+030' (N is 1-based; 0 sets all channels), 'direct setvalue N position az el [dist]', azimuth, elevation, distance, bounds, lfe, packformat, 'direct applyvalues parameter v1 v2 ...', 'direct inputlayout 0+5+0' (labels, positions and LFE after a BS.2051 layout, written as a reference to the common definitions when the layout has one), 'direct name symbol' (the bed's audioObject name), or 'direct parameter values' for all channels</digest>
+			<description>Metadata of the bed written after the objects (see the directchans attribute), in the mc.ear.direct~ format: 'direct setvalue N speakerlabel M+030' (N is 1-based; 0 sets all channels), 'direct setvalue N position az el [dist]', azimuth, elevation, distance, bounds, lfe, packformat, 'direct applyvalues parameter v1 v2 ...', 'direct inputlayout 0+5+0' (labels, positions and LFE after a BS.2051 layout, written as a reference to the common definitions when the layout has one), 'direct name symbol' (the bed's audioObject name), or 'direct parameter values' for all channels. The 'tracks' message of a reading ear.adm or mc.ear.play~ is ignored, so their direct outlet can be fed to this message.</description>
+		</method>
+		<method name='directchans'>
+			<arglist>
+				<arg name='directchans' optional='0' type='int' />
+			</arglist>
+			<digest>Set the directchans attribute</digest>
+			<description>Set the <at>directchans</at> attribute. Number of DirectSpeakers channels written as a bed on the tracks after the objects (0: no bed); their metadata comes from 'direct' messages.</description>
 		</method>
 		<method name='dump'>
 			<digest>Report the file, its programmes, rendering items and warnings on the info outlet</digest>
 			<description>Report the file, its programmes, rendering items and warnings on the info outlet.</description>
+		</method>
+		<method name='hoa'>
+			<digest>Metadata of the HOA scene written after the bed, in the mc.ear.hoa~ format: 'hoa order N' (the hoaorder attribute; -1 for no scene), 'hoa normalization SN3D|N3D|FuMa' and 'hoa name symbol'</digest>
+			<description>Metadata of the HOA scene written after the bed, in the mc.ear.hoa~ format: 'hoa order N' (the hoaorder attribute; -1 for no scene), 'hoa normalization SN3D|N3D|FuMa' and 'hoa name symbol'. The 'tracks' message of a reading ear.adm or mc.ear.play~ is ignored, so their hoa outlet can be fed to this message.</description>
+		</method>
+		<method name='hoanormalization'>
+			<arglist>
+				<arg name='hoanormalization' optional='0' type='symbol' />
+			</arglist>
+			<digest>Set the hoanormalization attribute</digest>
+			<description>Set the <at>hoanormalization</at> attribute. Normalization of the HOA scene written: SN3D, N3D or FuMa. Also set by 'hoa normalization name'.</description>
+		</method>
+		<method name='hoaorder'>
+			<arglist>
+				<arg name='hoaorder' optional='0' type='int' />
+			</arglist>
+			<digest>Set the hoaorder attribute</digest>
+			<description>Set the <at>hoaorder</at> attribute. Ambisonic order of the HOA scene written on the (order+1)^2 tracks after the bed, in ACN order; -1 for no scene. Also set by 'hoa order N'.</description>
 		</method>
 		<method name='list'>
 			<digest>Captured object metadata: a list sets the position of all objects</digest>
@@ -100,12 +129,12 @@
 			<description>Emit the object metadata for a time position in milliseconds ('time 1500'), as the renderer messages for the blocks active at that time. Only blocks that changed since the last emission are sent.</description>
 		</method>
 		<method name='write'>
-			<digest>Write a BW64 file with the captured timeline as ADM metadata: 'write out.wav in.wav' copies the audio of in.wav (one track per object, recorded with mc.sfrecord~ for example) into out.wav with the chna and axml chunks</digest>
-			<description>Write a BW64 file with the captured timeline as ADM metadata: 'write out.wav in.wav' copies the audio of in.wav (one track per object, recorded with mc.sfrecord~ for example) into out.wav with the chna and axml chunks.</description>
+			<digest>Write a BW64 file with the captured metadata as ADM: 'write out.wav in.wav' copies the audio of in.wav (recorded with mc.sfrecord~ for example: one track per object, then the bed's channels, then the HOA components) into out.wav with the chna and axml chunks</digest>
+			<description>Write a BW64 file with the captured metadata as ADM: 'write out.wav in.wav' copies the audio of in.wav (recorded with mc.sfrecord~ for example: one track per object, then the bed's channels, then the HOA components) into out.wav with the chna and axml chunks. Reports 'written path tracks frames'.</description>
 		</method>
 		<method name='writexml'>
-			<digest>Write the captured timeline as an ADM XML file: 'writexml out.xml [length seconds]' (for inspection, or for tools that take the metadata separately)</digest>
-			<description>Write the captured timeline as an ADM XML file: 'writexml out.xml [length seconds]' (for inspection, or for tools that take the metadata separately).</description>
+			<digest>Write the captured metadata as an ADM XML file: 'writexml out.xml [length seconds]' (for inspection, or for tools that take the metadata separately)</digest>
+			<description>Write the captured metadata as an ADM XML file: 'writexml out.xml [length seconds]' (for inspection, or for tools that take the metadata separately).</description>
 		</method>
 	</methodlist>
 
@@ -115,6 +144,18 @@
 		<attribute name='chans' get='1' set='1' type='long' size='1'>
 			<digest>Number of objects captured for writing (one per audio track of the file written)</digest>
 			<description>Number of objects captured for writing (one per audio track of the file written). Default: 16.</description>
+		</attribute>
+		<attribute name='directchans' get='1' set='1' type='long' size='1'>
+			<digest>Number of DirectSpeakers channels written as a bed on the tracks after the objects (0: no bed); their metadata comes from 'direct' messages</digest>
+			<description>Number of DirectSpeakers channels written as a bed on the tracks after the objects (0: no bed); their metadata comes from 'direct' messages. Default: 0.</description>
+		</attribute>
+		<attribute name='hoanormalization' get='1' set='1' type='symbol' size='1'>
+			<digest>Normalization of the HOA scene written: SN3D, N3D or FuMa</digest>
+			<description>Normalization of the HOA scene written: SN3D, N3D or FuMa. Also set by 'hoa normalization name'. Default: SN3D.</description>
+		</attribute>
+		<attribute name='hoaorder' get='1' set='1' type='long' size='1'>
+			<digest>Ambisonic order of the HOA scene written on the (order+1)^2 tracks after the bed, in ACN order; -1 for no scene</digest>
+			<description>Ambisonic order of the HOA scene written on the (order+1)^2 tracks after the bed, in ACN order; -1 for no scene. Also set by 'hoa order N'. Default: -1.</description>
 		</attribute>
 		<attribute name='programmename' get='1' set='1' type='symbol' size='1'>
 			<digest>Name of the audioProgramme written</digest>

@@ -20,7 +20,7 @@ and unit tests.
 | `ear.adm` | Reads and writes ADM files (BW64 with ADM metadata): resolves a file's rendering items like the EAR, plays its object metadata to the renderers with the reference's interpolation rules, and captures object messages to write them with recorded audio as a new ADM file. |
 | `mc.ear.select~` | Picks channels of a multichannel signal by number, to route the tracks of a file (as `ear.adm` reports them) to the renderer that handles them. |
 | `mc.ear.play~` | Plays an ADM file, audio and metadata together: the audio is streamed from disk to three multichannel outlets already routed for the three renderers, and the metadata is emitted from the audio clock. Plays files `mc.sfplay~` cannot open (RF64/BW64 over 4 GB). |
-| `mc.ear.record~` | Records an ADM file, audio and metadata together: the multichannel input is the objects' audio, and the object metadata sent to it (as to `mc.ear.objects~`) is written as blocks timed by the recorded audio. Writes files over 4 GB as RF64. |
+| `mc.ear.record~` | Records an ADM file, audio and metadata together: the multichannel input carries the objects' audio, a DirectSpeakers bed and an HOA scene, and the object metadata sent to it (as to `mc.ear.objects~`) is written as blocks timed by the recorded audio. Writes files over 4 GB as RF64. |
 
 All objects take a BS.2051 layout name as argument (`0+2+0`, `0+5+0`, `2+5+0`,
 `4+5+0`, `4+5+1`, `3+7+0`, `4+9+0`, `9+10+3`, `0+7+0`, `4+7+0`); the default is
@@ -190,6 +190,25 @@ and a `chna` entry, with one `audioBlockFormat` per captured change
 writes the metadata alone, and `clear` discards the capture. `@chans` sets
 the number of objects captured.
 
+**Beds and scenes.** A DirectSpeakers bed and an HOA scene are written after
+the objects' tracks: `@directchans 6` adds six bed channels on the tracks
+after the objects, `@hoaorder 1` four HOA components in ACN order after the
+bed (the recorded audio has the tracks in that order: objects, bed, scene).
+Their metadata is static and given in the renderers' own formats, prefixed
+with the outlet it belongs to: `direct setvalue 4 speakerlabel LFE1`,
+`direct setvalue 1 position 30 0`, `direct applyvalues lfe 0 0 0 1 0 0`,
+`direct inputlayout 0+5+0` (labels, nominal positions and LFE after a
+BS.2051 layout, exactly as `mc.ear.direct~`'s `inputlayout`), `direct name
+music`; `hoa order 1`, `hoa normalization N3D`, `hoa name ambience`. A bed
+whose channels name a common definitions layout (`inputlayout` sets the
+`packformat`, as does a file read by `ear.adm`) is written as a reference
+to that layout and its channels, as the EAR's own tools do; any other bed
+gets its own channel formats with the labels, positions and bounds given.
+Because `tracks` messages are ignored, the direct and hoa outlets of a
+reading `ear.adm` or `mc.ear.play~` can be fed straight into these messages
+through `[prepend direct]` and `[prepend hoa]` to copy a file's bed and
+scene.
+
 **Playing with one transport: `mc.ear.play~`.** `ear.adm` with `mc.sfplay~`
 runs two transports, Max's scheduler for the metadata and the audio for the
 sound, which drift apart over a long file and need `mc.ear.select~` to route
@@ -226,34 +245,37 @@ audio's plays at the wrong speed, with a warning.
 ```
 
 **Recording with one transport: `mc.ear.record~`.** The counterpart for
-writing: the multichannel input is the objects' audio, one channel per
-object, as fed to `mc.ear.objects~`, and the object metadata is sent to
-`mc.ear.record~` in the same format as to the renderer (`setvalue n
-parameter`, `applyvalues`, lists, or a parameter as a message for all
-objects), so the same messages can drive both at once and the mix is heard
-as it is recorded. `open file.wav` names the file, `start` (or `1`) records
+writing: the multichannel input carries the tracks in file order, the
+objects' audio first (one channel per object, as fed to `mc.ear.objects~`),
+then the bed's channels (`@directchans`) and the HOA components
+(`@hoaorder`), combined with `mc.combine~` when they come from different
+places. The object metadata is sent to `mc.ear.record~` in the same format
+as to the renderer (`setvalue n parameter`, `applyvalues`, lists, or a
+parameter as a message for all objects), so the same messages can drive
+both at once and the mix is heard as it is recorded; the bed and scene
+metadata is static, given with `direct ...` and `hoa ...` as in `ear.adm`. `open file.wav` names the file, `start` (or `1`) records
 from the objects' current parameters, `stop` (or `0`) finishes it and
-reports `written path objects length-ms` on the outlet (`failed path` when
+reports `written path tracks length-ms` on the outlet (`failed path` when
 the file could not be written). Every change while recording becomes an
 `audioBlockFormat` at the time of the audio recorded so far (the frames the
 audio thread has handed over), with the ramp in force as its interpolation,
 so the blocks land on the samples they belong to instead of on Max's
-scheduler clock. `@chans` sets the channels written (extra input channels
-are ignored with a warning, missing ones are silent), `@bitdepth` the
-sample format (16, 24 or 32), `@ramp` and `name n symbol` are as in
-`ear.adm`. A writer thread drains a ring buffer to disk in chunks and adds
+scheduler clock. `@chans`, `@directchans` and `@hoaorder` set the channels
+written (extra input channels are ignored with a warning, missing ones are
+silent), `@bitdepth` the sample format (16, 24 or 32), `@ramp` and `name n
+symbol` are as in `ear.adm`. A writer thread drains a ring buffer to disk in chunks and adds
 the `chna` and `axml` chunks when the recording stops, so the audio thread
 never touches the disk; vectors dropped because the disk fell behind are
 counted and reported in the Max console. Files over 4 GB are written as
 RF64, which `mc.ear.play~` plays and `mc.sfplay~` cannot.
 
 ```
-[open take.wav( [start( [stop(   [setvalue 1 azimuth 30(
-|               |       |        |
+[open take.wav( [start( [stop(   [setvalue 1 azimuth 30(  [direct inputlayout 0+5+0(
+|               |       |        |                        |
 |               |       |        +-- also to [mc.ear.objects~] to hear it
-[mc.ear.record~ @chans 16] <-- (multichannelsignal) the objects' audio
+[mc.ear.record~ @chans 16 @directchans 6] <-- [mc.combine~ 2] <-- objects audio, bed audio
 |
-[print]   recording / written take.wav 16 120000 / failed / position
+[print]   recording / written take.wav 22 120000 / failed / position
 ```
 
 Limitations of this first version: zone exclusion is not read or written
@@ -263,8 +285,8 @@ types are skipped with a warning on the info outlet; `audioObject`
 importance and complementary object groups are not interpreted (every
 object is rendered); nested objects use the innermost start and duration;
 when a file has several HOA scenes only the first is sent to the hoa
-outlet; `mc.ear.record~` writes Objects only (DirectSpeakers and HOA
-capture are not done yet); and `ear.adm` with `mc.sfplay~` or `mc.sfrecord~`
+outlet; one bed and one scene are written per file, with static metadata
+(no timed DirectSpeakers or HOA blocks); and `ear.adm` with `mc.sfplay~` or `mc.sfrecord~`
 needs a file Max can open (RIFF, under 4 GB), where `mc.ear.play~` and
 `mc.ear.record~` do not.
 
@@ -478,7 +500,7 @@ source/projects/mc.ear.play_tilde/     mc.ear.play~ (plays an ADM file: streamed
 source/projects/mc.ear.record_tilde/   mc.ear.record~ (records an ADM file: audio and captured metadata together)
 source/projects/shared/ear_max_adm.h   rendering item selection and block timing like the EAR, ADM document building
 source/projects/shared/ear_max_adm_player.h  the loaded file's items, their reports and timed emission (ear.adm, mc.ear.play~)
-source/projects/shared/ear_max_adm_capture.h capturing object metadata as timed blocks for writing (ear.adm, mc.ear.record~)
+source/projects/shared/ear_max_adm_capture.h capturing object, bed and scene metadata for writing (ear.adm, mc.ear.record~)
 source/projects/shared/ear_max_stream.h      disk streaming of a BW64 file: reader thread and ring buffer for the audio thread
 source/projects/shared/ear_max_sink.h        disk writing of a BW64 file with ADM: ring buffer from the audio thread and writer thread
 source/libadm/                         libadm, the EBU ADM library (submodule)
@@ -546,9 +568,8 @@ page is not well-formed XML.
 - Custom reproduction screens (currently the default screen is used for
   `screenref` and screen edge lock).
 - `ear.hoa`: control-rate HOA decoding matrix, and HOA `screenRef` once libear implements it.
-- ADM files, next phases: DirectSpeakers and HOA capture for writing (in
-  `ear.adm` and `mc.ear.record~`), sample-rate conversion in `mc.ear.play~`,
-  and zone exclusion once libadm supports it.
+- ADM files, next phases: sample-rate conversion in `mc.ear.play~`, timed
+  DirectSpeakers and HOA blocks, and zone exclusion once libadm supports it.
 
 ## License
 

@@ -518,7 +518,9 @@ inline selection select_items(const loaded_file& file, int programme_index = -1)
             hoa.name = name;
             if (hoa_pack) {
                 if (auto hp = std::dynamic_pointer_cast<const adm::AudioPackFormatHoa>(hoa_pack)) {
-                    if (hp->has<adm::Normalization>()) {
+                    // the pack's normalization only when it is set (its default would
+                    // override what the blocks say)
+                    if (hp->has<adm::Normalization>() && !hp->isDefault<adm::Normalization>()) {
                         hoa.normalization = hp->get<adm::Normalization>().get();
                     }
                 }
@@ -575,105 +577,393 @@ struct captured_object {
     std::vector<captured_block> blocks;
 };
 
-/// Build an ADM document with one Objects audioObject per captured object:
-/// a programme, a content, and for each object the pack, channel, stream,
-/// track formats and track UID. `length` is the audio length in seconds
-/// (the last block of each object lasts until then). The chna entries for
-/// track i (0-based) are appended to `chna_ids`.
-inline std::shared_ptr<adm::Document> build_document(const std::string& programme_name, const std::vector<captured_object>& objects,
-                                                     double length, std::vector<bw64::AudioId>& chna_ids)
+/// One captured DirectSpeakers channel: what mc.ear.direct~ takes for an
+/// input channel (speaker labels, nominal position with optional bounds,
+/// LFE, and the audioPackFormatID of a common definitions layout).
+struct captured_direct_channel {
+    std::vector<std::string> labels;
+    bool has_position{ false };
+    double azimuth{ 0.0 };
+    double elevation{ 0.0 };
+    double distance{ 1.0 };
+    std::vector<double> bounds;    ///< azimuthMin azimuthMax elevationMin elevationMax [distanceMin distanceMax], or empty
+    bool lfe{ false };
+    std::string pack_id;    ///< common definitions audioPackFormatID (AP_0001xxxx) of the bed, or empty for a custom bed
+};
+
+/// A captured channel bed: one DirectSpeakers audioObject whose tracks
+/// follow the objects' in the file.
+struct captured_bed {
+    std::string name{ "bed" };
+    std::vector<captured_direct_channel> channels;
+};
+
+/// A captured HOA scene: one audioObject with (order+1)^2 tracks in ACN
+/// order after the bed's; an order below 0 means no scene.
+struct captured_scene {
+    std::string name{ "scene" };
+    int order{ -1 };
+    std::string normalization{ "SN3D" };
+
+    size_t channels() const
+    {
+        return order < 0 ? 0 : hoa::component_count(order);
+    }
+};
+
+/// Everything written as one audioProgramme: the objects (tracks 1..N),
+/// the bed (the next tracks) and the scene (the last tracks).
+struct captured_programme {
+    std::string name{ "libear-max" };
+    std::vector<captured_object> objects;
+    captured_bed bed;
+    captured_scene scene;
+
+    size_t channels() const
+    {
+        return objects.size() + bed.channels.size() + scene.channels();
+    }
+
+    /// Keep what fits in `channels` tracks: the objects first, then the
+    /// bed's channels, then the scene (dropped when incomplete).
+    void limit(size_t channels)
+    {
+        if (objects.size() > channels) {
+            objects.resize(channels);
+        }
+        const size_t for_bed = channels - objects.size();
+        if (bed.channels.size() > for_bed) {
+            bed.channels.resize(for_bed);
+        }
+        if (scene.channels() > channels - objects.size() - bed.channels.size()) {
+            scene.order = -1;
+        }
+    }
+};
+
+namespace detail {
+
+/// the stream and track formats and the track UID of one PCM channel,
+/// referencing its channel and pack formats (as adm::createSimpleObject)
+struct channel_chain {
+    std::shared_ptr<adm::AudioTrackFormat> track_format;
+    std::shared_ptr<adm::AudioTrackUid> uid;
+};
+
+inline channel_chain chain_channel(const std::shared_ptr<adm::AudioObject>& object, const std::shared_ptr<adm::AudioPackFormat>& pack,
+                                   const std::shared_ptr<adm::AudioChannelFormat>& channel, const std::string& name)
+{
+    channel_chain c;
+    auto stream = adm::AudioStreamFormat::create(adm::AudioStreamFormatName(name), adm::FormatDefinition::PCM);
+    c.track_format = adm::AudioTrackFormat::create(adm::AudioTrackFormatName(name), adm::FormatDefinition::PCM);
+    c.uid = adm::AudioTrackUid::create();
+    pack->addReference(channel);
+    stream->setReference(channel);
+    c.track_format->setReference(stream);
+    object->addReference(c.uid);
+    c.uid->setReference(c.track_format);
+    c.uid->setReference(pack);
+    return c;
+}
+
+/// a chna entry for a track: the UID, track format and pack format ids
+/// (valid once the document's ids are assigned)
+struct chna_source {
+    std::shared_ptr<adm::AudioTrackUid> uid;
+    std::shared_ptr<adm::AudioTrackFormat> track_format;
+    std::shared_ptr<adm::AudioPackFormat> pack;
+};
+
+inline void add_object_blocks(adm::SimpleObjectHolder& holder, const captured_object& object, double length)
+{
+    for (size_t k = 0; k < object.blocks.size(); ++k) {
+        const captured_block& c = object.blocks[k];
+        const object_state& s = c.state;
+        const double next = k + 1 < object.blocks.size() ? object.blocks[k + 1].time : length;
+        const double duration = std::max(0.0, next - c.time);
+
+        auto make = [&](auto position) {
+            adm::AudioBlockFormatObjects block(position);
+            block.set(adm::Rtime(to_time(c.time)));
+            block.set(adm::Duration(to_time(duration)));
+            block.set(adm::Cartesian(s.cartesian));
+            block.set(adm::Width(static_cast<float>(s.width)));
+            block.set(adm::Height(static_cast<float>(s.height)));
+            block.set(adm::Depth(static_cast<float>(s.depth)));
+            block.set(adm::Gain::fromLinear(s.gain));
+            block.set(adm::Diffuse(static_cast<float>(s.diffuse)));
+            block.set(adm::ScreenRef(s.screenref));
+            if (s.channellock) {
+                if (s.channellock_distance > 0.0) {
+                    block.set(adm::ChannelLock(adm::ChannelLockFlag(true), adm::MaxDistance(static_cast<float>(s.channellock_distance))));
+                }
+                else {
+                    block.set(adm::ChannelLock(adm::ChannelLockFlag(true)));
+                }
+            }
+            if (s.divergence > 0.0) {
+                if (s.cartesian) {
+                    block.set(adm::ObjectDivergence(adm::Divergence(static_cast<float>(s.divergence)),
+                                                    adm::PositionRange(static_cast<float>(s.divergence_range))));
+                }
+                else {
+                    block.set(adm::ObjectDivergence(adm::Divergence(static_cast<float>(s.divergence)),
+                                                    adm::AzimuthRange(static_cast<float>(s.divergence_range))));
+                }
+            }
+            // the renderer ramps over c.ramp seconds; a ramp of 0 is a jump
+            if (c.ramp > 0.0) {
+                block.set(adm::JumpPosition(adm::JumpPositionFlag(true),
+                                            adm::InterpolationLength(to_nanoseconds(std::min(c.ramp, duration)))));
+            }
+            else {
+                block.set(adm::JumpPosition(adm::JumpPositionFlag(true)));
+            }
+            holder.audioChannelFormat->add(block);
+        };
+
+        if (s.cartesian) {
+            adm::CartesianPosition position(adm::X(static_cast<float>(s.x)), adm::Y(static_cast<float>(s.y)),
+                                            adm::Z(static_cast<float>(s.z)));
+            if (s.screenedgelock_h != "none" || s.screenedgelock_v != "none") {
+                adm::ScreenEdgeLock lock;
+                if (s.screenedgelock_h != "none") lock.set(adm::HorizontalEdge(s.screenedgelock_h));
+                if (s.screenedgelock_v != "none") lock.set(adm::VerticalEdge(s.screenedgelock_v));
+                position.set(lock);
+            }
+            make(position);
+        }
+        else {
+            adm::SphericalPosition position(adm::Azimuth(static_cast<float>(s.azimuth)),
+                                            adm::Elevation(static_cast<float>(s.elevation)),
+                                            adm::Distance(static_cast<float>(s.distance)));
+            if (s.screenedgelock_h != "none" || s.screenedgelock_v != "none") {
+                adm::ScreenEdgeLock lock;
+                if (s.screenedgelock_h != "none") lock.set(adm::HorizontalEdge(s.screenedgelock_h));
+                if (s.screenedgelock_v != "none") lock.set(adm::VerticalEdge(s.screenedgelock_v));
+                position.set(lock);
+            }
+            make(position);
+        }
+    }
+}
+
+/// A speaker label without the BS.2051 URN prefix the common definitions
+/// use ("urn:itu:bs:2051:0:speaker:M+030" -> "M+030"), with the LFE
+/// spellings of the common definitions (LFE, LFEL, LFER) mapped to the
+/// layouts' (LFE1, LFE2) as libear does.
+inline std::string nominal_label(const std::string& label)
+{
+    std::string out = label;
+    const std::string prefix = "urn:itu:bs:2051:";
+    if (out.compare(0, prefix.size(), prefix) == 0) {
+        const size_t colon = out.find(":speaker:", prefix.size());
+        if (colon != std::string::npos) {
+            out = out.substr(colon + 9);
+        }
+    }
+    if (out == "LFE" || out == "LFEL") return "LFE1";
+    if (out == "LFER") return "LFE2";
+    return out;
+}
+
+/// A bed whose channels all name the same common definitions pack and
+/// carry one label each that names a distinct channel of that pack: it is
+/// written as a reference to that pack and its channels (as the EAR's
+/// tools do), otherwise as custom channel formats. Returns the pack id, or
+/// empty with `why_not` set when the pack cannot be used.
+inline adm::AudioPackFormatId common_bed_pack(const captured_bed& bed, std::vector<adm::AudioTrackFormatId>& track_ids,
+                                              std::vector<std::string>& labels, std::string& why_not)
+{
+    adm::AudioPackFormatId none;
+    const std::string& id = bed.channels.front().pack_id;
+    if (id.empty()) {
+        return none;
+    }
+    adm::AudioPackFormatId pack_id;
+    try {
+        pack_id = adm::parseAudioPackFormatId(id);
+    }
+    catch (const std::exception&) {
+        why_not = "packformat " + id + " is not a valid audioPackFormatID";
+        return none;
+    }
+    const auto common = adm::getCommonDefinitions();
+    const auto pack = common->lookup(pack_id);
+    if (!pack) {
+        why_not = "packformat " + id + " is not a common definitions layout";
+        return none;
+    }
+    // the pack's channels by nominal label, with the track format of each
+    // (AT_<channel id>_01 in the common definitions)
+    std::map<std::string, adm::AudioTrackFormatId> track_of_label;
+    for (const auto& cf : pack->getReferences<adm::AudioChannelFormat>()) {
+        std::string channel_id = adm::formatId(cf->get<adm::AudioChannelFormatId>());    // AC_0001xxxx
+        channel_id.replace(0, 3, "AT_");
+        adm::AudioTrackFormatId track_id;
+        try {
+            track_id = adm::parseAudioTrackFormatId(channel_id + "_01");
+        }
+        catch (const std::exception&) {
+            continue;
+        }
+        if (!common->lookup(track_id)) {
+            continue;
+        }
+        for (const auto& b : cf->getElements<adm::AudioBlockFormatDirectSpeakers>()) {
+            for (const auto& label : b.get<adm::SpeakerLabels>()) {
+                track_of_label.emplace(nominal_label(label.get()), track_id);
+            }
+            break;
+        }
+    }
+    std::set<std::string> seen;
+    for (const auto& ch : bed.channels) {
+        if (ch.pack_id != id) {
+            why_not = "the channels name different packformats";
+            return none;
+        }
+        if (ch.labels.size() != 1) {
+            why_not = "packformat " + id + " needs exactly one speaker label per channel";
+            return none;
+        }
+        const std::string label = nominal_label(ch.labels.front());
+        const auto it = track_of_label.find(label);
+        if (it == track_of_label.end() || !seen.insert(label).second) {
+            why_not = "packformat " + id + ": speaker label " + ch.labels.front() + " is not a distinct channel of that layout";
+            return none;
+        }
+        track_ids.push_back(it->second);
+        labels.push_back(label);
+    }
+    return pack_id;
+}
+
+} // namespace detail
+
+/// Build an ADM document for a captured programme: a programme, a content,
+/// one Objects audioObject per captured object (pack, channel, stream and
+/// track formats and track UID each), a DirectSpeakers audioObject for the
+/// bed and an HOA audioObject for the scene. `length` is the audio length
+/// in seconds (the last block of each object lasts until then). The chna
+/// entries are appended to `chna_ids` in track order: objects, bed, scene.
+/// Things written differently from what was asked are explained in
+/// `warnings` (a bed whose packformat could not be used as a common
+/// definitions layout).
+inline std::shared_ptr<adm::Document> build_document(const captured_programme& captured, double length,
+                                                     std::vector<bw64::AudioId>& chna_ids, std::vector<std::string>& warnings)
 {
     auto doc = adm::Document::create();
-    auto programme = adm::AudioProgramme::create(adm::AudioProgrammeName(programme_name));
-    auto content = adm::AudioContent::create(adm::AudioContentName(programme_name));
+    auto programme = adm::AudioProgramme::create(adm::AudioProgrammeName(captured.name));
+    auto content = adm::AudioContent::create(adm::AudioContentName(captured.name));
     programme->addReference(content);
     doc->add(programme);
 
-    std::vector<adm::SimpleObjectHolder> holders;
-    for (const auto& object : objects) {
+    std::vector<detail::chna_source> tracks;
+
+    for (const auto& object : captured.objects) {
         auto holder = adm::createSimpleObject(object.name);
         content->addReference(holder.audioObject);
-        for (size_t k = 0; k < object.blocks.size(); ++k) {
-            const captured_block& c = object.blocks[k];
-            const object_state& s = c.state;
-            const double next = k + 1 < object.blocks.size() ? object.blocks[k + 1].time : length;
-            const double duration = std::max(0.0, next - c.time);
+        detail::add_object_blocks(holder, object, length);
+        tracks.push_back({ holder.audioTrackUid, holder.audioTrackFormat, holder.audioPackFormat });
+    }
 
-            auto make = [&](auto position) {
-                adm::AudioBlockFormatObjects block(position);
-                block.set(adm::Rtime(to_time(c.time)));
-                block.set(adm::Duration(to_time(duration)));
-                block.set(adm::Cartesian(s.cartesian));
-                block.set(adm::Width(static_cast<float>(s.width)));
-                block.set(adm::Height(static_cast<float>(s.height)));
-                block.set(adm::Depth(static_cast<float>(s.depth)));
-                block.set(adm::Gain::fromLinear(s.gain));
-                block.set(adm::Diffuse(static_cast<float>(s.diffuse)));
-                block.set(adm::ScreenRef(s.screenref));
-                if (s.channellock) {
-                    if (s.channellock_distance > 0.0) {
-                        block.set(adm::ChannelLock(adm::ChannelLockFlag(true), adm::MaxDistance(static_cast<float>(s.channellock_distance))));
-                    }
-                    else {
-                        block.set(adm::ChannelLock(adm::ChannelLockFlag(true)));
-                    }
-                }
-                if (s.divergence > 0.0) {
-                    if (s.cartesian) {
-                        block.set(adm::ObjectDivergence(adm::Divergence(static_cast<float>(s.divergence)),
-                                                        adm::PositionRange(static_cast<float>(s.divergence_range))));
-                    }
-                    else {
-                        block.set(adm::ObjectDivergence(adm::Divergence(static_cast<float>(s.divergence)),
-                                                        adm::AzimuthRange(static_cast<float>(s.divergence_range))));
-                    }
-                }
-                // the renderer ramps over c.ramp seconds; a ramp of 0 is a jump
-                if (c.ramp > 0.0) {
-                    block.set(adm::JumpPosition(adm::JumpPositionFlag(true),
-                                                adm::InterpolationLength(to_nanoseconds(std::min(c.ramp, duration)))));
-                }
-                else {
-                    block.set(adm::JumpPosition(adm::JumpPositionFlag(true)));
-                }
-                holder.audioChannelFormat->add(block);
-            };
-
-            if (s.cartesian) {
-                adm::CartesianPosition position(adm::X(static_cast<float>(s.x)), adm::Y(static_cast<float>(s.y)),
-                                                adm::Z(static_cast<float>(s.z)));
-                if (s.screenedgelock_h != "none" || s.screenedgelock_v != "none") {
-                    adm::ScreenEdgeLock lock;
-                    if (s.screenedgelock_h != "none") lock.set(adm::HorizontalEdge(s.screenedgelock_h));
-                    if (s.screenedgelock_v != "none") lock.set(adm::VerticalEdge(s.screenedgelock_v));
-                    position.set(lock);
-                }
-                make(position);
-            }
-            else {
-                adm::SphericalPosition position(adm::Azimuth(static_cast<float>(s.azimuth)),
-                                                adm::Elevation(static_cast<float>(s.elevation)),
-                                                adm::Distance(static_cast<float>(s.distance)));
-                if (s.screenedgelock_h != "none" || s.screenedgelock_v != "none") {
-                    adm::ScreenEdgeLock lock;
-                    if (s.screenedgelock_h != "none") lock.set(adm::HorizontalEdge(s.screenedgelock_h));
-                    if (s.screenedgelock_v != "none") lock.set(adm::VerticalEdge(s.screenedgelock_v));
-                    position.set(lock);
-                }
-                make(position);
+    if (!captured.bed.channels.empty()) {
+        const captured_bed& bed = captured.bed;
+        std::vector<adm::AudioTrackFormatId> track_ids;
+        std::vector<std::string> labels;
+        std::string why_not;
+        const adm::AudioPackFormatId common = detail::common_bed_pack(bed, track_ids, labels, why_not);
+        if (common != adm::AudioPackFormatId()) {
+            adm::addCommonDefinitionsTo(doc);
+            auto holder = adm::addTailoredCommonDefinitionsObjectTo(doc, bed.name, common, track_ids, labels);
+            content->addReference(holder.audioObject);
+            auto pack = doc->lookup(common);
+            for (size_t i = 0; i < labels.size(); ++i) {
+                tracks.push_back({ holder.audioTrackUids.at(labels[i]), doc->lookup(track_ids[i]), pack });
             }
         }
-        holders.push_back(holder);
+        else {
+            if (!why_not.empty()) {
+                warnings.push_back("bed '" + bed.name + "': " + why_not + "; written with its own channel formats");
+            }
+            auto object = adm::AudioObject::create(adm::AudioObjectName(bed.name));
+            auto pack = adm::AudioPackFormat::create(adm::AudioPackFormatName(bed.name), adm::TypeDefinition::DIRECT_SPEAKERS);
+            object->addReference(pack);
+            content->addReference(object);
+            doc->add(object);
+            for (size_t i = 0; i < bed.channels.size(); ++i) {
+                const captured_direct_channel& ch = bed.channels[i];
+                const std::string name = bed.name + " " + (ch.labels.empty() ? std::to_string(i + 1) : ch.labels.front());
+                auto channel = adm::AudioChannelFormat::create(adm::AudioChannelFormatName(name), adm::TypeDefinition::DIRECT_SPEAKERS);
+                adm::AudioBlockFormatDirectSpeakers block;
+                for (const auto& label : ch.labels) {
+                    block.add(adm::SpeakerLabel(label));
+                }
+                if (ch.has_position) {
+                    adm::SphericalSpeakerPosition position(adm::Azimuth(static_cast<float>(ch.azimuth)),
+                                                          adm::Elevation(static_cast<float>(ch.elevation)),
+                                                          adm::Distance(static_cast<float>(ch.distance)));
+                    if (ch.bounds.size() >= 4) {
+                        position.set(adm::AzimuthMin(static_cast<float>(ch.bounds[0])));
+                        position.set(adm::AzimuthMax(static_cast<float>(ch.bounds[1])));
+                        position.set(adm::ElevationMin(static_cast<float>(ch.bounds[2])));
+                        position.set(adm::ElevationMax(static_cast<float>(ch.bounds[3])));
+                    }
+                    if (ch.bounds.size() >= 6) {
+                        position.set(adm::DistanceMin(static_cast<float>(ch.bounds[4])));
+                        position.set(adm::DistanceMax(static_cast<float>(ch.bounds[5])));
+                    }
+                    block.set(position);
+                }
+                channel->add(block);
+                if (ch.lfe) {
+                    channel->set(adm::Frequency(adm::LowPass(120.0f)));
+                }
+                auto chain = detail::chain_channel(object, pack, channel, name);
+                tracks.push_back({ chain.uid, chain.track_format, pack });
+            }
+        }
     }
+
+    if (captured.scene.order >= 0) {
+        const captured_scene& scene = captured.scene;
+        auto object = adm::AudioObject::create(adm::AudioObjectName(scene.name));
+        auto pack = adm::AudioPackFormatHoa::create(adm::AudioPackFormatName(scene.name), adm::Normalization(scene.normalization));
+        object->addReference(pack);
+        content->addReference(object);
+        doc->add(object);
+        for (size_t i = 0; i < scene.channels(); ++i) {
+            int n = 0, m = 0;
+            hoa::from_acn(static_cast<int>(i), n, m);
+            const std::string name = scene.name + " " + std::to_string(i + 1);
+            auto channel = adm::AudioChannelFormat::create(adm::AudioChannelFormatName(name), adm::TypeDefinition::HOA);
+            channel->add(adm::AudioBlockFormatHoa(adm::Order(n), adm::Degree(m), adm::Normalization(scene.normalization)));
+            auto chain = detail::chain_channel(object, pack, channel, name);
+            tracks.push_back({ chain.uid, chain.track_format, pack });
+        }
+    }
+
     adm::reassignIds(doc);
 
-    for (size_t i = 0; i < holders.size(); ++i) {
-        const auto& h = holders[i];
-        chna_ids.emplace_back(static_cast<uint16_t>(i + 1), adm::formatId(h.audioTrackUid->get<adm::AudioTrackUidId>()),
-                              adm::formatId(h.audioTrackFormat->get<adm::AudioTrackFormatId>()),
-                              adm::formatId(h.audioPackFormat->get<adm::AudioPackFormatId>()));
+    for (size_t i = 0; i < tracks.size(); ++i) {
+        const auto& t = tracks[i];
+        chna_ids.emplace_back(static_cast<uint16_t>(i + 1), adm::formatId(t.uid->get<adm::AudioTrackUidId>()),
+                              adm::formatId(t.track_format->get<adm::AudioTrackFormatId>()),
+                              adm::formatId(t.pack->get<adm::AudioPackFormatId>()));
     }
     return doc;
+}
+
+/// Objects only (no bed, no scene).
+inline std::shared_ptr<adm::Document> build_document(const std::string& programme_name, const std::vector<captured_object>& objects,
+                                                     double length, std::vector<bw64::AudioId>& chna_ids)
+{
+    captured_programme captured;
+    captured.name = programme_name;
+    captured.objects = objects;
+    std::vector<std::string> warnings;
+    return build_document(captured, length, chna_ids, warnings);
 }
 
 inline std::string to_xml(const std::shared_ptr<adm::Document>& doc)
