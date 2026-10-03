@@ -18,16 +18,24 @@
 /// frames written to and read from the ring since the last reset (the ring
 /// index is the counter modulo the ring size), `m_play_frame` is the frame
 /// of the file the next pulled frame comes from, wrapping at the end when
-/// looping. No sample-rate conversion is done.
+/// looping.
+///
+/// The ring holds frames at the output (audio) rate: when the file's rate
+/// differs, the reader thread converts each chunk with the resampler
+/// (ear_max_resample.h) as it fills the ring, and the file position is
+/// derived from the output frames pulled (`m_play_out` times the ratio).
 /// @license Use of this source code is governed by the MIT License found in the License.md file.
 
 #pragma once
+
+#include "ear_max_resample.h"
 
 #include "bw64/bw64.hpp"
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <cstdint>
 #include <limits>
@@ -40,8 +48,8 @@ namespace earmax::admio {
 
 class bw64_stream {
 public:
-    static constexpr size_t k_ring_frames = 32768;    ///< ring capacity (0.68 s at 48 kHz)
-    static constexpr size_t k_chunk_frames = 4096;    ///< frames read from disk at a time
+    static constexpr size_t k_ring_frames = 65536;    ///< ring capacity in output frames (1.4 s at 48 kHz)
+    static constexpr size_t k_chunk_frames = 4096;    ///< file frames read from disk at a time
     static constexpr uint64_t k_no_frame = std::numeric_limits<uint64_t>::max();
 
     bw64_stream()
@@ -108,6 +116,37 @@ public:
     {
         m_loop.store(loop);
         m_cv.notify_all();
+    }
+
+    /// The rate the audio runs at: a file at another rate is converted to
+    /// it. A change while a file is open resets the ring at the current
+    /// position (0: unknown, no conversion).
+    void set_output_rate(uint32_t rate)
+    {
+        {
+            std::lock_guard<std::mutex> lock(m_io_mutex);
+            if (m_out_rate.load() == rate) {
+                return;
+            }
+            m_out_rate.store(rate);
+            if (m_frames.load() > 0 && !m_has_pending_reader) {
+                m_ready.store(false, std::memory_order_release);
+                m_ended.store(false, std::memory_order_release);
+                m_pending_seek = std::min(play_frame(), m_frames.load());
+            }
+        }
+        m_cv.notify_all();
+    }
+
+    uint32_t output_rate() const
+    {
+        return m_out_rate.load();
+    }
+
+    /// File frames per output frame (1 without conversion).
+    double ratio() const
+    {
+        return m_step.load(std::memory_order_acquire);
     }
 
     bool loop() const
@@ -223,12 +262,19 @@ private:
         }
         if (n > 0) {
             m_read_total.store(read_total + static_cast<uint64_t>(n), std::memory_order_release);
-            uint64_t play = m_play_frame.load(std::memory_order_relaxed) + static_cast<uint64_t>(n);
+            // the file frame the next output frame comes from: the output
+            // frames pulled since the reset, scaled to file frames
+            m_play_out += static_cast<uint64_t>(n);
+            uint64_t play = m_origin_file + static_cast<uint64_t>(std::floor(static_cast<double>(m_play_out) * m_step.load(std::memory_order_relaxed)));
             const uint64_t total = m_frames.load();
             if (total > 0 && play >= total) {
                 if (m_loop.load()) {
+                    const uint64_t lap = play / total;
                     play %= total;    // the ring holds the start of the file again
-                    m_wrapped.store(true, std::memory_order_release);
+                    if (lap != m_laps) {
+                        m_laps = lap;
+                        m_wrapped.store(true, std::memory_order_release);
+                    }
                 }
                 else {
                     play = total;
@@ -300,13 +346,32 @@ private:
             m_eof_total.store(k_no_frame, std::memory_order_relaxed);
             m_ended.store(false, std::memory_order_relaxed);
             m_wrapped.store(false, std::memory_order_relaxed);
-            m_play_frame.store(std::min(frame, m_frames.load()), std::memory_order_release);
+            m_flushed = false;
+            m_out_chunk.clear();
+            // the conversion for this file and output rate
+            const uint32_t file_rate = m_samplerate.load();
+            const uint32_t out_rate = m_out_rate.load();
+            m_resampler.configure(file_rate, out_rate == 0 ? file_rate : out_rate, m_ring_channels);
+            m_step.store(m_resampler.step(), std::memory_order_relaxed);
+            m_origin_file = std::min(frame, m_frames.load());
+            m_play_out = 0;
+            m_laps = 0;
+            m_play_frame.store(m_origin_file, std::memory_order_release);
         }
         if (!m_reader) {
             return;
         }
         try {
-            m_reader->seek(static_cast<int32_t>(std::min<uint64_t>(frame, static_cast<uint64_t>(std::numeric_limits<int32_t>::max()))));
+            // the resampler's history: the frames before the start position,
+            // so that the first output frame is the start position itself
+            const uint64_t start = std::min(frame, m_frames.load());
+            const uint64_t history = std::min<uint64_t>(start, m_resampler.history());
+            if (history > 0) {
+                m_reader->seek(static_cast<int32_t>(std::min<uint64_t>(start - history, static_cast<uint64_t>(std::numeric_limits<int32_t>::max()))));
+                const uint64_t got = m_reader->read(m_chunk.data(), history);
+                m_resampler.prime(m_chunk.data(), static_cast<size_t>(got));
+            }
+            m_reader->seek(static_cast<int32_t>(std::min<uint64_t>(start, static_cast<uint64_t>(std::numeric_limits<int32_t>::max()))));
             m_file_frame = m_reader->tell();
         }
         catch (...) {
@@ -334,32 +399,64 @@ private:
         return !m_running || m_has_pending_reader || m_pending_seek != k_no_frame;
     }
 
-    /// Read one chunk from the file into the ring when there is room for it.
-    /// Returns false when nothing was written (ring full, end of file, error).
+    /// Write the converted chunk waiting in m_out_chunk to the ring when
+    /// there is room for all of it; false when it has to wait.
+    bool write_out_chunk()
+    {
+        const size_t channels = m_ring_channels;
+        const uint64_t frames = m_out_chunk.size() / channels;
+        if (frames == 0) {
+            return true;
+        }
+        const uint64_t read_total = m_read_total.load(std::memory_order_acquire);
+        const uint64_t write_total = m_write_total.load(std::memory_order_relaxed);
+        const uint64_t free_frames = k_ring_frames - (write_total - read_total);
+        if (free_frames < frames) {
+            return false;
+        }
+        for (uint64_t i = 0; i < frames; ++i) {
+            const size_t index = static_cast<size_t>((write_total + i) % k_ring_frames);
+            std::copy(m_out_chunk.begin() + static_cast<long>(i * channels), m_out_chunk.begin() + static_cast<long>((i + 1) * channels),
+                      m_ring.begin() + static_cast<long>(index * channels));
+        }
+        m_write_total.store(write_total + frames, std::memory_order_release);
+        m_out_chunk.clear();
+        return true;
+    }
+
+    /// Read one chunk from the file, convert it and put it into the ring
+    /// when there is room for it. Returns false when nothing was written
+    /// (ring full, end of file, error).
     bool fill_chunk()
     {
         const size_t channels = m_ring_channels;
         if (channels == 0) {
             return false;
         }
-        const uint64_t read_total = m_read_total.load(std::memory_order_acquire);
-        const uint64_t write_total = m_write_total.load(std::memory_order_relaxed);
-        const uint64_t free_frames = k_ring_frames - (write_total - read_total);
-        if (free_frames < k_chunk_frames) {
-            return false;
+        if (!write_out_chunk()) {
+            return false;    // a converted chunk is still waiting for room
         }
         if (m_eof_total.load(std::memory_order_relaxed) != k_no_frame) {
             if (!m_loop.load()) {
                 return false;    // the end was reached and looping is off
             }
             m_eof_total.store(k_no_frame, std::memory_order_release);    // looping was turned on at the end: go on from the start
+            m_flushed = false;
+        }
+        {
+            // room for what a chunk becomes at the output rate
+            const uint64_t read_total = m_read_total.load(std::memory_order_acquire);
+            const uint64_t write_total = m_write_total.load(std::memory_order_relaxed);
+            const uint64_t free_frames = k_ring_frames - (write_total - read_total);
+            if (free_frames < m_resampler.output_bound(k_chunk_frames)) {
+                return false;
+            }
         }
         uint64_t frames = 0;
         try {
             if (m_reader->eof()) {
                 if (!m_loop.load()) {
-                    m_eof_total.store(write_total, std::memory_order_release);
-                    return false;
+                    return end_of_file();
                 }
                 m_reader->seek(0);
                 m_file_frame = 0;
@@ -368,22 +465,35 @@ private:
             m_file_frame += frames;
         }
         catch (...) {
-            m_eof_total.store(write_total, std::memory_order_release);    // treat a read error as the end
+            m_out_chunk.clear();
+            m_eof_total.store(m_write_total.load(std::memory_order_relaxed), std::memory_order_release);    // treat a read error as the end
             return false;
         }
         if (frames == 0) {
-            if (!m_loop.load()) {
-                m_eof_total.store(write_total, std::memory_order_release);
+            return m_loop.load() ? false : end_of_file();
+        }
+        m_resampler.process(m_chunk.data(), static_cast<size_t>(frames), m_out_chunk);
+        return write_out_chunk() || !m_out_chunk.empty();
+    }
+
+    /// The file is over (and looping is off): the resampler's tail goes
+    /// into the ring, then the end is marked. False when nothing more was
+    /// written.
+    bool end_of_file()
+    {
+        if (!m_flushed) {
+            m_flushed = true;
+            m_resampler.flush(m_out_chunk);
+            if (!m_out_chunk.empty()) {
+                write_out_chunk();    // written, or waiting for room: either way not the end yet
+                return true;
             }
-            return false;
         }
-        for (uint64_t i = 0; i < frames; ++i) {
-            const size_t index = static_cast<size_t>((write_total + i) % k_ring_frames);
-            std::copy(m_chunk.begin() + static_cast<long>(i * channels), m_chunk.begin() + static_cast<long>((i + 1) * channels),
-                      m_ring.begin() + static_cast<long>(index * channels));
+        if (!m_out_chunk.empty()) {
+            return write_out_chunk();
         }
-        m_write_total.store(write_total + frames, std::memory_order_release);
-        return true;
+        m_eof_total.store(m_write_total.load(std::memory_order_relaxed), std::memory_order_release);
+        return false;
     }
 
     // requests and the file (io mutex)
@@ -395,7 +505,10 @@ private:
     bool m_has_pending_reader{ false };
     uint64_t m_pending_seek{ k_no_frame };
     uint64_t m_file_frame{ 0 };
-    std::vector<float> m_chunk;
+    std::vector<float> m_chunk;        ///< file frames read
+    std::vector<float> m_out_chunk;    ///< the chunk converted, waiting for room in the ring
+    resampler m_resampler;
+    bool m_flushed{ false };
 
     // the ring (ring mutex for resets, atomics for the positions)
     std::mutex m_ring_mutex;
@@ -406,6 +519,10 @@ private:
     std::atomic<uint64_t> m_write_total{ 0 };
     std::atomic<uint64_t> m_eof_total{ k_no_frame };    ///< write position at which the file ended
     std::atomic<uint64_t> m_play_frame{ 0 };
+    uint64_t m_origin_file{ 0 };    ///< file frame the ring starts at (audio thread reads, after the reset)
+    uint64_t m_play_out{ 0 };       ///< output frames pulled since the reset (audio thread)
+    uint64_t m_laps{ 0 };           ///< times the file end was passed while looping
+    std::atomic<double> m_step{ 1.0 };    ///< file frames per output frame
     std::atomic<bool> m_ready{ false };
     std::atomic<bool> m_ended{ false };
     std::atomic<bool> m_wrapped{ false };
@@ -416,6 +533,7 @@ private:
     std::atomic<uint16_t> m_channels{ 0 };
     std::atomic<uint64_t> m_frames{ 0 };
     std::atomic<uint32_t> m_samplerate{ 0 };
+    std::atomic<uint32_t> m_out_rate{ 0 };
 
     std::thread m_thread;
 };
