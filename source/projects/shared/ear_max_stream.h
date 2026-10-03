@@ -130,6 +130,10 @@ public:
             }
             m_out_rate.store(rate);
             if (m_frames.load() > 0 && !m_has_pending_reader) {
+                // under the ring mutex: a pull in progress finishes first, so
+                // the position captured is the one it left, and no later pull
+                // delivers frames at the old rate
+                std::lock_guard<std::mutex> ring_lock(m_ring_mutex);
                 m_ready.store(false, std::memory_order_release);
                 m_ended.store(false, std::memory_order_release);
                 m_pending_seek = std::min(play_frame(), m_frames.load());
@@ -230,7 +234,11 @@ public:
     /// the rest with silence). Never blocks, allocates or frees.
     long pull(double** outs, long out_channels, long frames)
     {
-        if (!m_ready.load(std::memory_order_acquire) || !m_ring_mutex.try_lock()) {
+        if (!m_ring_mutex.try_lock()) {
+            return 0;
+        }
+        if (!m_ready.load(std::memory_order_acquire)) {    // checked under the lock: a reset cannot slip in between
+            m_ring_mutex.unlock();
             return 0;
         }
         const long delivered = pull_locked(outs, out_channels, frames);
