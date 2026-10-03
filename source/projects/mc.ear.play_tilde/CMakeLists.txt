@@ -17,6 +17,7 @@ set(SOURCE_FILES
     ../shared/ear_max.h
     ../shared/ear_max_adm.h
     ../shared/ear_max_adm_player.h
+    ../shared/ear_max_resample.h
     ../shared/ear_max_stream.h
     ../shared/ear_max_mc.h
 )

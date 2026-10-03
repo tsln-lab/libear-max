@@ -6,6 +6,7 @@
 ///          be ready.
 /// @license Use of this source code is governed by the MIT License found in the License.md file.
 
+#include <cmath>
 #include <cstdio>
 #include <sstream>
 
@@ -25,6 +26,7 @@ enum outlet_index { k_objects = 3, k_direct = 4, k_hoa = 5, k_info = 6 };
 
 constexpr long k_block = 64;
 constexpr double k_sr = 48000.0;
+constexpr double k_pi = 3.14159265358979323846;
 constexpr int k_ready_timeout_ms = 5000;
 
 std::string message_text(const c74::max::t_atom_vector& msg)
@@ -153,7 +155,250 @@ std::string write_short_fixture()
     return out;
 }
 
+/// a file at `rate` Hz with two tracks of sines (f0 on track 1, f1 on
+/// track 2) lasting `frames`, and one object per track whose first block
+/// changes at 20 ms
+std::string write_tone_fixture(const char* name, uint32_t rate, uint64_t frames, double f0, double f1)
+{
+    const std::string audio = std::string(EARMAX_TEST_OUT_DIR) + "/" + name + "_audio.wav";
+    const std::string out = std::string(EARMAX_TEST_OUT_DIR) + "/" + name + ".wav";
+    {
+        auto writer = bw64::writeFile(audio, 2, rate, 24);
+        std::vector<float> interleaved(static_cast<size_t>(frames) * 2);
+        for (size_t f = 0; f < frames; ++f) {
+            const double t = static_cast<double>(f) / rate;
+            interleaved[f * 2] = static_cast<float>(0.5 * std::sin(2.0 * k_pi * f0 * t));
+            interleaved[f * 2 + 1] = static_cast<float>(0.5 * std::sin(2.0 * k_pi * f1 * t));
+        }
+        writer->write(interleaved.data(), frames);
+    }
+    admio::captured_object one;
+    one.name = "tone";
+    admio::object_state s;
+    s.azimuth = 30.0;
+    one.blocks.push_back({ 0.0, 0.0, s });
+    s.azimuth = -30.0;
+    one.blocks.push_back({ 0.02, 0.01, s });
+    admio::captured_object two;
+    two.name = "other";
+    two.blocks.push_back({ 0.0, 0.0, s });
+    std::vector<bw64::AudioId> chna_ids;
+    auto doc = admio::build_document("tones", { one, two }, static_cast<double>(frames) / rate, chna_ids);
+    std::remove(out.c_str());
+    admio::write_file(out, audio, doc, chna_ids);
+    return out;
+}
+
+/// the largest deviation of `samples` (from index `from`) from a sine of
+/// `freq` Hz with amplitude 0.5 at `rate` Hz
+double sine_error(const std::vector<double>& samples, size_t from, double freq, double rate)
+{
+    double worst = 0.0;
+    for (size_t n = from; n < samples.size(); ++n) {
+        const double expected = 0.5 * std::sin(2.0 * k_pi * freq * static_cast<double>(n) / rate);
+        worst = std::max(worst, std::abs(samples[n] - expected));
+    }
+    return worst;
+}
+
+double rms(const std::vector<double>& samples, size_t from)
+{
+    double sum = 0.0;
+    for (size_t n = from; n < samples.size(); ++n) {
+        sum += samples[n] * samples[n];
+    }
+    return samples.size() > from ? std::sqrt(sum / static_cast<double>(samples.size() - from)) : 0.0;
+}
+
 } // namespace
+
+SCENARIO("the resampler converts interleaved frames between rates") {
+    GIVEN("a resampler at the same rate") {
+        admio::resampler r;
+        r.configure(48000, 48000, 2);
+        std::vector<float> in{ 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f };
+        std::vector<float> out;
+        THEN("the input passes through") {
+            REQUIRE(r.process(in.data(), 3, out) == 3);
+            REQUIRE(out == in);
+            REQUIRE(r.history() == 0);
+            REQUIRE(r.flush(out) == 0);
+        }
+    }
+
+    GIVEN("a resampler from 24 kHz to 48 kHz") {
+        admio::resampler r;
+        r.configure(24000, 48000, 1);
+        REQUIRE(r.step() == Approx(0.5));
+        REQUIRE(r.history() == 31);
+        std::vector<float> in(2400);
+        for (size_t n = 0; n < in.size(); ++n) {
+            in[n] = static_cast<float>(0.5 * std::sin(2.0 * k_pi * 1000.0 * static_cast<double>(n) / 24000.0));
+        }
+        std::vector<float> out;
+        WHEN("a 1 kHz tone is converted in two pieces and flushed") {
+            r.process(in.data(), 1000, out);
+            r.process(in.data() + 1000, 1400, out);
+            r.flush(out);
+            THEN("the output is the tone at 48 kHz, twice as many frames") {
+                REQUIRE(out.size() >= 4800);
+                REQUIRE(out.size() <= 4800 + 2 * r.history() + 4);
+                REQUIRE(r.produced() == out.size());
+                // between the band-limited onset and the pre-ringing of the cut at the end
+                std::vector<double> samples(out.begin(), out.begin() + 4800 - 128);
+                REQUIRE(sine_error(samples, 128, 1000.0, 48000.0) < 2e-3);
+            }
+        }
+        WHEN("a constant is converted") {
+            std::fill(in.begin(), in.end(), 0.25f);
+            r.process(in.data(), in.size(), out);
+            THEN("the output settles at the same level") {
+                REQUIRE(out.size() > 200);
+                for (size_t n = 100; n < out.size(); ++n) {
+                    REQUIRE(out[n] == Approx(0.25).margin(1e-4));
+                }
+            }
+        }
+    }
+
+    GIVEN("a resampler from 96 kHz to 48 kHz") {
+        admio::resampler r;
+        r.configure(96000, 48000, 1);
+        REQUIRE(r.step() == Approx(2.0));
+        REQUIRE(r.history() == 63);    // the low-pass at 24 kHz needs twice the taps
+        std::vector<float> in(9600);
+        for (size_t n = 0; n < in.size(); ++n) {
+            const double t = static_cast<double>(n) / 96000.0;
+            in[n] = static_cast<float>(0.5 * std::sin(2.0 * k_pi * 1000.0 * t) + 0.5 * std::sin(2.0 * k_pi * 30000.0 * t));
+        }
+        std::vector<float> out;
+        r.process(in.data(), in.size(), out);
+        THEN("the tone within the band stays and the one above the output's Nyquist is removed") {
+            REQUIRE(out.size() >= 4700);
+            std::vector<double> samples(out.begin(), out.end());
+            REQUIRE(sine_error(samples, 128, 1000.0, 48000.0) < 3e-3);
+        }
+    }
+}
+
+SCENARIO("mc.ear.play~ converts a file at another sample rate to the audio's") {
+    ext_main(nullptr);
+
+    GIVEN("a 24 kHz file of 0.2 s playing at 48 kHz") {
+        const std::string fixture = write_tone_fixture("tones_24k", 24000, 4800, 1000.0, 2000.0);
+        test_wrapper<mc_ear_play_tilde> an_instance;
+        mc_ear_play_tilde& obj = an_instance;
+        obj.open(atoms{ symbol(fixture) });
+        REQUIRE(obj.loaded());
+        const long channels = start_dsp(obj);
+        REQUIRE(channels == 4);
+        mc_audio_io io(static_cast<size_t>(channels), k_block);
+        REQUIRE(obj.wait_ready(k_ready_timeout_ms));
+
+        WHEN("it plays to the end") {
+            obj.start();
+            REQUIRE(obj.wait_ready(k_ready_timeout_ms));
+            clear_outputs(obj);
+            std::vector<double> track1, track2;
+            int emitted_after = -1, ended_after = -1;
+            for (int vector = 1; vector <= 160; ++vector) {
+                obj(io.input(), io.output());
+                obj.flush();
+                track1.insert(track1.end(), io.outs[0].begin(), io.outs[0].end());
+                track2.insert(track2.end(), io.outs[1].begin(), io.outs[1].end());
+                if (emitted_after < 0 && count_prefix(messages(obj, k_objects), "setvalue 1 ramp 10") > 0) {
+                    emitted_after = vector;
+                }
+                if (ended_after < 0 && count_prefix(messages(obj, k_info), "end ") > 0) {
+                    ended_after = vector;
+                }
+                if (vector == 75) {
+                    REQUIRE(obj.current_time() == Approx(0.1));    // 4800 output frames: 0.1 s of the file
+                }
+            }
+            THEN("the tones come out at 48 kHz, the metadata on the file's clock, and the file ends at its converted length") {
+                // up to the file's end (the last frames are the kernel's tail of the cut signal)
+                REQUIRE(sine_error(std::vector<double>(track1.begin(), track1.begin() + 9472), 128, 1000.0, k_sr) < 2e-3);
+                REQUIRE(sine_error(std::vector<double>(track2.begin(), track2.begin() + 9472), 128, 2000.0, k_sr) < 2e-3);
+                // the change at 20 ms is file frame 480 = output frame 960: one vector ahead is vector 14
+                REQUIRE(emitted_after == 14);
+                REQUIRE(contains(messages(obj, k_objects), "setvalue 1 position -30 0 1"));
+                // 4800 file frames become 9600 output frames: 150 vectors (the end may take one more)
+                REQUIRE(ended_after >= 150);
+                REQUIRE(ended_after <= 152);
+                REQUIRE(contains(messages(obj, k_info), "end 200"));
+                REQUIRE(rms(track1, 9664) < 1e-3);    // silence after the end
+            }
+        }
+
+        WHEN("it loops") {
+            obj.loop = true;
+            obj.start();
+            REQUIRE(obj.wait_ready(k_ready_timeout_ms));
+            // the file is exactly 150 vectors at 48 kHz: play up to the last one
+            for (int vector = 1; vector <= 149; ++vector) {
+                obj(io.input(), io.output());
+                obj.flush();
+            }
+            clear_outputs(obj);
+            int emitted_after = -1;
+            for (int vector = 0; vector <= 40; ++vector) {    // vector 0 is the file's last: the wrap
+                obj(io.input(), io.output());
+                obj.flush();
+                if (emitted_after < 0 && count_prefix(messages(obj, k_objects), "setvalue 1 ramp 10") > 0) {
+                    emitted_after = vector;
+                }
+            }
+            THEN("the second lap starts over as a jump and its block at 20 ms is emitted one vector ahead again") {
+                const auto objects = messages(obj, k_objects);
+                REQUIRE(objects.front() == "setvalue 1 ramp 0");    // the wrap: the first block again
+                REQUIRE(contains(objects, "setvalue 1 position 30 0 1"));
+                REQUIRE(emitted_after == 14);    // not at once because the lap counter runs past the file's length
+                REQUIRE(obj.current_time() < 0.2);
+            }
+        }
+
+        WHEN("it is moved into the file") {
+            obj.start();
+            obj.seek(atoms{ 100.0 });
+            REQUIRE(obj.wait_ready(k_ready_timeout_ms));
+            std::vector<double> track1;
+            for (int vector = 1; vector <= 20; ++vector) {
+                obj(io.input(), io.output());
+                track1.insert(track1.end(), io.outs[0].begin(), io.outs[0].end());
+            }
+            THEN("the output continues the tone from that position without a transient") {
+                // 100 ms into a 1 kHz tone is a whole number of cycles: the same sine from the start
+                REQUIRE(sine_error(track1, 0, 1000.0, k_sr) < 3e-3);
+                REQUIRE(obj.current_time() == Approx(0.1 + 20 * k_block / k_sr));    // time passes at the same rate in both domains
+            }
+        }
+    }
+
+    GIVEN("a 96 kHz file with a tone above the audio's Nyquist") {
+        const std::string fixture = write_tone_fixture("tones_96k", 96000, 19200, 1000.0, 30000.0);
+        test_wrapper<mc_ear_play_tilde> an_instance;
+        mc_ear_play_tilde& obj = an_instance;
+        obj.open(atoms{ symbol(fixture) });
+        REQUIRE(obj.loaded());
+        const long channels = start_dsp(obj);
+        mc_audio_io io(static_cast<size_t>(channels), k_block);
+        obj.start();
+        REQUIRE(obj.wait_ready(k_ready_timeout_ms));
+        std::vector<double> track1, track2;
+        for (int vector = 1; vector <= 100; ++vector) {
+            obj(io.input(), io.output());
+            obj.flush();
+            track1.insert(track1.end(), io.outs[0].begin(), io.outs[0].end());
+            track2.insert(track2.end(), io.outs[1].begin(), io.outs[1].end());
+        }
+        THEN("the tone within the band plays and the one above it is filtered out") {
+            REQUIRE(sine_error(track1, 256, 1000.0, k_sr) < 3e-3);
+            REQUIRE(rms(track2, 256) < 2e-3);
+            REQUIRE(obj.current_time() == Approx(100 * k_block * 2.0 / 96000.0));
+        }
+    }
+}
 
 SCENARIO("mc.ear.play~ plays the tracks of an ADM file to the renderers' outlets") {
     ext_main(nullptr);

@@ -19,7 +19,7 @@ and unit tests.
 | `mc.ear.encode~` | Multichannel ambisonic encoder, the counterpart of `mc.ear.objects~`: every input channel is an object positioned with the same messages, the output carries the summed ambisonic components in ACN order. |
 | `ear.adm` | Reads and writes ADM files (BW64 with ADM metadata): resolves a file's rendering items like the EAR, plays its object metadata to the renderers with the reference's interpolation rules, and captures object messages to write them with recorded audio as a new ADM file. |
 | `mc.ear.select~` | Picks channels of a multichannel signal by number, to route the tracks of a file (as `ear.adm` reports them) to the renderer that handles them. |
-| `mc.ear.play~` | Plays an ADM file, audio and metadata together: the audio is streamed from disk to three multichannel outlets already routed for the three renderers, and the metadata is emitted from the audio clock. Plays files `mc.sfplay~` cannot open (RF64/BW64 over 4 GB). |
+| `mc.ear.play~` | Plays an ADM file, audio and metadata together: the audio is streamed from disk to three multichannel outlets already routed for the three renderers, and the metadata is emitted from the audio clock. Plays files `mc.sfplay~` cannot open (RF64/BW64 over 4 GB) and converts a file at another sample rate to the audio's. |
 | `mc.ear.record~` | Records an ADM file, audio and metadata together: the multichannel input carries the objects' audio, a DirectSpeakers bed and an HOA scene, and the object metadata sent to it (as to `mc.ear.objects~`) is written as blocks timed by the recorded audio. Writes files over 4 GB as RF64. |
 
 All objects take a BS.2051 layout name as argument (`0+2+0`, `0+5+0`, `2+5+0`,
@@ -229,8 +229,11 @@ latency, under a few milliseconds. A reader thread streams the audio in
 chunks through a ring buffer, so the audio thread never touches the disk;
 when the disk falls behind, the vectors that could not be filled are
 counted and reported in the Max console. Files over 4 GB (RF64/BW64) play.
-No sample-rate conversion is done: a file whose rate differs from the
-audio's plays at the wrong speed, with a warning.
+A file at another sample rate is converted to the audio's as it streams:
+the reader thread resamples each chunk (a windowed-sinc polyphase
+resampler, band-limited to the lower Nyquist frequency, so a 96 kHz file
+played at 48 kHz loses nothing it could keep and aliases nothing), and the
+transport, `position` and the metadata stay on the file's own clock.
 
 ```
 [open file.wav( [start(
@@ -502,6 +505,7 @@ source/projects/shared/ear_max_adm.h   rendering item selection and block timing
 source/projects/shared/ear_max_adm_player.h  the loaded file's items, their reports and timed emission (ear.adm, mc.ear.play~)
 source/projects/shared/ear_max_adm_capture.h capturing object, bed and scene metadata for writing (ear.adm, mc.ear.record~)
 source/projects/shared/ear_max_stream.h      disk streaming of a BW64 file: reader thread and ring buffer for the audio thread
+source/projects/shared/ear_max_resample.h    windowed-sinc polyphase sample-rate conversion for the streamed audio
 source/projects/shared/ear_max_sink.h        disk writing of a BW64 file with ADM: ring buffer from the audio thread and writer thread
 source/libadm/                         libadm, the EBU ADM library (submodule)
 source/libbw64/                        libbw64, the EBU BW64 file library (submodule, header-only)
@@ -547,7 +551,12 @@ page is not well-formed XML.
   file hand-over; the audio thread `try_lock`s the ring only to pull a
   vector through the routing table, and never blocks, allocates or frees.
   It wakes the main thread with a Max queue to emit the metadata that
-  falls within the next vector.
+  falls within the next vector. The ring holds frames at the audio's rate:
+  a file at another rate is converted chunk by chunk on the reader thread
+  (Kaiser-windowed sinc, 32 taps per side at the band-limiting rate, 256
+  phases with linear interpolation), the history before a seek position is
+  primed from the file so a seek lands on the exact frame, and the file
+  position the metadata runs on is derived from the output frames pulled.
 - `mc.ear.record~` is the mirror image: the audio thread interleaves each
   vector into a ring buffer (a full ring drops the vector and counts it),
   a writer thread drains it to libbw64 in 4096-frame chunks, and on `stop`
@@ -568,8 +577,8 @@ page is not well-formed XML.
 - Custom reproduction screens (currently the default screen is used for
   `screenref` and screen edge lock).
 - `ear.hoa`: control-rate HOA decoding matrix, and HOA `screenRef` once libear implements it.
-- ADM files, next phases: sample-rate conversion in `mc.ear.play~`, timed
-  DirectSpeakers and HOA blocks, and zone exclusion once libadm supports it.
+- ADM files, next phases: timed DirectSpeakers and HOA blocks, and zone
+  exclusion once libadm supports it.
 
 ## License
 

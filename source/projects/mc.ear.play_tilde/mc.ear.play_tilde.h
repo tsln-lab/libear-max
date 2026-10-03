@@ -6,6 +6,8 @@
 ///          DirectSpeakers tracks and the HOA components. The Objects metadata
 ///          is emitted from the audio clock (ear_max_adm_player.h), so audio
 ///          and metadata cannot drift apart as they can with two transports.
+///          A file at another sample rate is converted to the audio's by the
+///          reader thread.
 /// @license Use of this source code is governed by the MIT License found in the License.md file.
 
 #pragma once
@@ -31,7 +33,8 @@ public:
                      "ramp' followed by its parameters). 'open' reads the file and reports its rendering items on the "
                      "info outlet; 'start' (or 1) plays from the beginning, 'stop' (or 0), 'pause', 'resume' and 'seek' "
                      "control the transport. The output channel counts follow the file when the audio is restarted. "
-                     "Files larger than 4 GB (RF64/BW64) play; no sample-rate conversion is done." };
+                     "Files larger than 4 GB (RF64/BW64) play, and a file at another sample rate is converted to the "
+                     "audio's as it streams." };
     MIN_TAGS{ "spatial audio, ADM, files, mc" };
     MIN_AUTHOR{ "tsln-lab" };
     MIN_RELATED{ "ear.adm, mc.ear.objects~, mc.ear.direct~, mc.ear.hoa~, mc.sfplay~" };
@@ -69,6 +72,7 @@ public:
     mc_ear_play_tilde(const atoms& args = {})
     {
         (void)args;
+        m_stream.set_output_rate(static_cast<uint32_t>(std::lround(samplerate())));
     }
 
     // ------------------------------------------------------------------
@@ -209,6 +213,7 @@ public:
             m_dsp_started = true;
             m_out_ptrs.assign(static_cast<size_t>(m_dsp_counts[0] + m_dsp_counts[1] + m_dsp_counts[2]), nullptr);
             route();
+            m_stream.set_output_rate(static_cast<uint32_t>(std::lround(m_samplerate)));
             check_samplerate();
             return {};
         } };
@@ -263,7 +268,7 @@ public:
         const uint64_t after = m_stream.play_frame();
         const uint64_t next = m_next_boundary.load(std::memory_order_acquire);
         const bool ended = m_stream.ready() && m_stream.ended();    // not a stale end while a seek is pending
-        if (after < before || ended || (next != admio::bw64_stream::k_no_frame && after + static_cast<uint64_t>(frames) >= next)) {
+        if (after < before || ended || (next != admio::bw64_stream::k_no_frame && m_stream.play_frame_after(frames) >= next)) {
             m_queue.set();
         }
     }
@@ -412,10 +417,11 @@ private:
     void check_samplerate()
     {
         if (m_dsp_started && m_stream.has_file() && static_cast<double>(m_stream.samplerate()) != m_samplerate) {
-            cerr << "the file's sample rate (" << m_stream.samplerate() << " Hz) differs from the audio's (" << m_samplerate
-                 << " Hz): no conversion is done, the file plays at the wrong speed" << endl;
+            cout << "the file's sample rate (" << m_stream.samplerate() << " Hz) is converted to the audio's (" << m_samplerate
+                 << " Hz)" << endl;
         }
     }
+
 
     /// move the playback and the metadata to `seconds`
     void locate(double seconds)
@@ -466,7 +472,7 @@ private:
             double time = now;
             const uint64_t next = m_next_boundary.load(std::memory_order_acquire);
             const uint64_t frame = m_stream.play_frame();
-            if (next != admio::bw64_stream::k_no_frame && frame + static_cast<uint64_t>(m_vector) >= next) {
+            if (next != admio::bw64_stream::k_no_frame && m_stream.play_frame_after(m_vector) >= next) {
                 time = std::max(time, static_cast<double>(next) / sr);
             }
             m_player.set_position(time);
