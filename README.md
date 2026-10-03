@@ -194,8 +194,8 @@ the number of objects captured.
 the objects' tracks: `@directchans 6` adds six bed channels on the tracks
 after the objects, `@hoaorder 1` four HOA components in ACN order after the
 bed (the recorded audio has the tracks in that order: objects, bed, scene).
-Their metadata is static and given in the renderers' own formats, prefixed
-with the outlet it belongs to: `direct setvalue 4 speakerlabel LFE1`,
+Their metadata is given in the renderers' own formats, prefixed with the
+outlet it belongs to: `direct setvalue 4 speakerlabel LFE1`,
 `direct setvalue 1 position 30 0`, `direct applyvalues lfe 0 0 0 1 0 0`,
 `direct inputlayout 0+5+0` (labels, nominal positions and LFE after a
 BS.2051 layout, exactly as `mc.ear.direct~`'s `inputlayout`), `direct name
@@ -204,6 +204,16 @@ whose channels name a common definitions layout (`inputlayout` sets the
 `packformat`, as does a file read by `ear.adm`) is written as a reference
 to that layout and its channels, as the EAR's own tools do; any other bed
 gets its own channel formats with the labels, positions and bounds given.
+A bed can change over time too: while `record` runs (or `mc.ear.record~`
+records), a change of a channel's labels, position or bounds becomes a
+timed `audioBlockFormat` at that moment, and such a bed is written with its
+own channel formats (the common definitions are static). On reading, a
+timed bed's blocks are emitted on the direct outlet at their start times by
+the same transport as the Objects blocks (`mc.ear.direct~` ramps the gains
+over its `ramp`); `lfe` and `packformat` are the channel's for the whole
+file. HOA blocks are static: order, degree and normalization do not change
+over time, and the timed HOA parameters (`nfcRefDist`, `screenRef`) are not
+implemented by libear.
 Because `tracks` messages are ignored, the direct and hoa outlets of a
 reading `ear.adm` or `mc.ear.play~` can be fed straight into these messages
 through `[prepend direct]` and `[prepend hoa]` to copy a file's bed and
@@ -256,7 +266,8 @@ places. The object metadata is sent to `mc.ear.record~` in the same format
 as to the renderer (`setvalue n parameter`, `applyvalues`, lists, or a
 parameter as a message for all objects), so the same messages can drive
 both at once and the mix is heard as it is recorded; the bed and scene
-metadata is static, given with `direct ...` and `hoa ...` as in `ear.adm`. `open file.wav` names the file, `start` (or `1`) records
+metadata is given with `direct ...` and `hoa ...` as in `ear.adm`, a bed
+change while recording becoming a timed block. `open file.wav` names the file, `start` (or `1`) records
 from the objects' current parameters, `stop` (or `0`) finishes it and
 reports `written path tracks length-ms` on the outlet (`failed path` when
 the file could not be written). Every change while recording becomes an
@@ -288,8 +299,8 @@ types are skipped with a warning on the info outlet; `audioObject`
 importance and complementary object groups are not interpreted (every
 object is rendered); nested objects use the innermost start and duration;
 when a file has several HOA scenes only the first is sent to the hoa
-outlet; one bed and one scene are written per file, with static metadata
-(no timed DirectSpeakers or HOA blocks); and `ear.adm` with `mc.sfplay~` or `mc.sfrecord~`
+outlet; one bed and one scene are written per file, and HOA blocks are
+static; and `ear.adm` with `mc.sfplay~` or `mc.sfrecord~`
 needs a file Max can open (RIFF, under 4 GB), where `mc.ear.play~` and
 `mc.ear.record~` do not.
 
@@ -577,8 +588,7 @@ page is not well-formed XML.
 - Custom reproduction screens (currently the default screen is used for
   `screenref` and screen edge lock).
 - `ear.hoa`: control-rate HOA decoding matrix, and HOA `screenRef` once libear implements it.
-- ADM files, next phases: timed DirectSpeakers and HOA blocks, and zone
-  exclusion once libadm supports it.
+- ADM files: zone exclusion once libadm supports it.
 
 ## License
 

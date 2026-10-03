@@ -84,6 +84,7 @@ public:
         m_sink.set_notify({});    // the queue goes away with us
         if (m_sink.recording()) {
             m_capture.end();
+            m_bed.end();
             m_sink.finish(captured_programme());
         }
     }
@@ -304,11 +305,12 @@ public:
         "'direct inputlayout 0+5+0' (labels, positions and LFE after a BS.2051 layout, written as a reference to the "
         "common definitions when the layout has one), 'direct name symbol' (the bed's audioObject name), or 'direct "
         "parameter values' for all channels. The 'tracks' message of ear.adm or mc.ear.play~ is ignored, so their "
-        "direct outlet can be fed to this message. The bed's metadata is static: what is set when the recording stops "
-        "is written.",
+        "direct outlet can be fed to this message. While recording, a change of a channel's labels, position or bounds "
+        "is written as a timed block at the audio's current time (such a bed gets its own channel formats); lfe and "
+        "packformat are the channel's for the whole file.",
         MIN_FUNCTION {
             std::string error;
-            if (!admio::apply_direct_message(m_bed, args, error)) {
+            if (!admio::apply_direct_message(m_bed, args, capture_time(), error)) {
                 cerr << error << endl;
             }
             return {};
@@ -502,6 +504,7 @@ private:
             return;
         }
         m_capture.begin();
+        m_bed.begin();
         out_info.send("recording", symbol(m_path));
     }
 
@@ -511,6 +514,7 @@ private:
             return;
         }
         m_capture.end();
+        m_bed.end();
         m_sink.finish(captured_programme());
     }
 

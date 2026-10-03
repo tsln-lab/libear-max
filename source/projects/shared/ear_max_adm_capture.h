@@ -278,7 +278,10 @@ private:
 
 /// The DirectSpeakers channels written after the objects, taking the
 /// messages of mc.ear.direct~ ('setvalue N speakerlabel ...', 'inputlayout
-/// 0+5+0', 'applyvalues ...', or a parameter for all channels).
+/// 0+5+0', 'applyvalues ...', or a parameter for all channels). Between
+/// begin() and end(), a change of a channel's labels, position or bounds
+/// is recorded as a timed block at the caller's time (lfe and packformat
+/// are the channel's for the whole file).
 class bed_capture {
 public:
     size_t size() const
@@ -289,6 +292,9 @@ public:
     void resize(size_t n)
     {
         m_channels.resize(n);
+        if (!m_blocks.empty()) {
+            m_blocks.resize(n);
+        }
     }
 
     const std::string& name() const
@@ -306,27 +312,65 @@ public:
         return m_channels[i];
     }
 
+    const std::vector<captured_direct_block>& blocks(size_t i) const
+    {
+        return m_blocks[i];
+    }
+
     void clear()
     {
+        m_capturing = false;
         for (auto& ch : m_channels) {
             ch = direct_metadata();
         }
+        for (auto& b : m_blocks) {
+            b.clear();
+        }
     }
 
-    /// Apply an mc.ear.direct~ channel parameter to one channel (0-based).
-    bool apply_one(size_t i, const std::string& name, const atoms& values, std::string& error)
+    /// Start capturing at time 0: every channel's current labels and
+    /// position become its first block.
+    void begin()
+    {
+        m_capturing = true;
+        m_blocks.assign(m_channels.size(), {});
+        for (size_t i = 0; i < m_channels.size(); ++i) {
+            m_blocks[i].push_back(block_of(m_channels[i], 0.0));
+        }
+    }
+
+    void end()
+    {
+        m_capturing = false;
+    }
+
+    bool capturing() const
+    {
+        return m_capturing;
+    }
+
+    /// Apply an mc.ear.direct~ channel parameter to one channel (0-based)
+    /// at `time` seconds; while capturing, a change of the labels, position
+    /// or bounds becomes a block.
+    bool apply_one(size_t i, const std::string& name, const atoms& values, double time, std::string& error)
     {
         if (i >= m_channels.size()) {
             error = "channel number out of range 1.." + std::to_string(m_channels.size());
             return false;
         }
-        return m_channels[i].apply(name, values, [&](const std::string& m) { error = m; });
+        if (!m_channels[i].apply(name, values, [&](const std::string& m) { error = m; })) {
+            return false;
+        }
+        if (name != "lfe" && name != "packformat") {
+            record_change(i, time);
+        }
+        return true;
     }
 
-    bool apply_all(const std::string& name, const atoms& values, std::string& error)
+    bool apply_all(const std::string& name, const atoms& values, double time, std::string& error)
     {
         for (size_t i = 0; i < m_channels.size(); ++i) {
-            if (!apply_one(i, name, values, error)) {
+            if (!apply_one(i, name, values, time, error)) {
                 return false;
             }
         }
@@ -338,7 +382,7 @@ public:
     /// a common definitions one its audioPackFormatID is set as well, so
     /// the bed is written as a reference to it. Channels beyond the layout
     /// are cleared.
-    bool apply_layout(const std::string& layout_name, std::string& error)
+    bool apply_layout(const std::string& layout_name, double time, std::string& error)
     {
         ear::Layout layout;
         try {
@@ -369,6 +413,7 @@ public:
                     meta.dstm.audioPackFormatID = adm::formatId(pack->second);
                 }
             }
+            record_change(i, time);
         }
         return true;
     }
@@ -380,7 +425,8 @@ public:
     {
         captured_bed out;
         out.name = m_name;
-        for (const auto& meta : m_channels) {
+        for (size_t i = 0; i < m_channels.size(); ++i) {
+            const direct_metadata& meta = m_channels[i];
             captured_direct_channel ch;
             ch.labels = meta.dstm.speakerLabels;
             ch.has_position = true;
@@ -390,14 +436,47 @@ public:
             ch.bounds = meta.bounds;
             ch.lfe = static_cast<bool>(meta.dstm.channelFrequency.lowPass);
             ch.pack_id = meta.dstm.audioPackFormatID ? *meta.dstm.audioPackFormatID : std::string();
+            if (i < m_blocks.size()) {
+                ch.blocks = m_blocks[i];
+            }
             out.channels.push_back(std::move(ch));
         }
         return out;
     }
 
 private:
+    static captured_direct_block block_of(const direct_metadata& meta, double time)
+    {
+        captured_direct_block b;
+        b.time = time;
+        b.labels = meta.dstm.speakerLabels;
+        b.has_position = true;
+        b.azimuth = meta.position.azimuth;
+        b.elevation = meta.position.elevation;
+        b.distance = meta.position.distance;
+        b.bounds = meta.bounds;
+        return b;
+    }
+
+    void record_change(size_t i, double time)
+    {
+        if (!m_capturing || i >= m_blocks.size()) {
+            return;
+        }
+        auto& blocks = m_blocks[i];
+        const double t = std::max(0.0, time);
+        captured_direct_block b = block_of(m_channels[i], t);
+        if (!blocks.empty() && std::abs(blocks.back().time - t) < 1e-6) {
+            blocks.back() = b;    // several parameters at the same time: one block
+            return;
+        }
+        blocks.push_back(std::move(b));
+    }
+
     std::string m_name{ "bed" };
     std::vector<direct_metadata> m_channels;
+    std::vector<std::vector<captured_direct_block>> m_blocks;    ///< per channel, while and after capturing
+    bool m_capturing{ false };
 };
 
 /// The HOA scene written after the bed: the order and normalization of
@@ -439,12 +518,13 @@ private:
 };
 
 /// Apply a message sent to the 'direct' inlet (or with 'direct' prepended)
-/// of a capturing object: the mc.ear.direct~ messages 'setvalue N parameter
-/// values...', 'applyvalues parameter v1 v2 ...', 'inputlayout name', plus
-/// 'name symbol' for the bed, and any channel parameter for all channels.
-/// The 'tracks' message of ear.adm and mc.ear.play~ is ignored, so their
-/// direct outlet can be fed straight back. Returns false with `error` set.
-inline bool apply_direct_message(bed_capture& bed, const atoms& args, std::string& error)
+/// of a capturing object at `time` seconds: the mc.ear.direct~ messages
+/// 'setvalue N parameter values...', 'applyvalues parameter v1 v2 ...',
+/// 'inputlayout name', plus 'name symbol' for the bed, and any channel
+/// parameter for all channels. The 'tracks' message of ear.adm and
+/// mc.ear.play~ is ignored, so their direct outlet can be fed straight
+/// back. Returns false with `error` set.
+inline bool apply_direct_message(bed_capture& bed, const atoms& args, double time, std::string& error)
 {
     if (args.empty() || !atom_is_symbol(args[0])) {
         error = "direct needs a message: setvalue, applyvalues, inputlayout, name or a channel parameter";
@@ -468,7 +548,7 @@ inline bool apply_direct_message(bed_capture& bed, const atoms& args, std::strin
             error = "direct inputlayout needs a layout name";
             return false;
         }
-        return bed.apply_layout(std::string(rest[0]), error);
+        return bed.apply_layout(std::string(rest[0]), time, error);
     }
     if (selector == "setvalue") {
         if (rest.size() < 2 || !atom_is_numeric(rest[0]) || !atom_is_symbol(rest[1])) {
@@ -482,7 +562,8 @@ inline bool apply_direct_message(bed_capture& bed, const atoms& args, std::strin
         }
         const std::string parameter = rest[1];
         const atoms values(rest.begin() + 2, rest.end());
-        return index == 0 ? bed.apply_all(parameter, values, error) : bed.apply_one(static_cast<size_t>(index - 1), parameter, values, error);
+        return index == 0 ? bed.apply_all(parameter, values, time, error)
+                          : bed.apply_one(static_cast<size_t>(index - 1), parameter, values, time, error);
     }
     if (selector == "applyvalues") {
         if (rest.empty() || !atom_is_symbol(rest[0])) {
@@ -492,13 +573,13 @@ inline bool apply_direct_message(bed_capture& bed, const atoms& args, std::strin
         const std::string parameter = rest[0];
         const size_t n = std::min(rest.size() - 1, bed.size());
         for (size_t i = 0; i < n; ++i) {
-            if (!bed.apply_one(i, parameter, atoms{ rest[i + 1] }, error)) {
+            if (!bed.apply_one(i, parameter, atoms{ rest[i + 1] }, time, error)) {
                 return false;
             }
         }
         return true;
     }
-    return bed.apply_all(selector, rest, error);
+    return bed.apply_all(selector, rest, time, error);
 }
 
 /// Apply a message sent to the 'hoa' inlet (or with 'hoa' prepended): the
