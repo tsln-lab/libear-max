@@ -1,0 +1,22 @@
+# The files of the ADM corpus: the release assets of
+# https://github.com/tsln-lab/adm-test-corpus/releases/tag/v1.0.0 (the EBU's
+# ADM test materials, CC BY 4.0), as "<asset name> <sha256>"; the asset is a
+# BW64 file and is saved as <asset name>.wav. tools/fetch_corpus.sh reads this.
+Channel-based.22.2 ea697a6987d542f76f764dd8babec1ba837ababfd2673dd04d21a3026f2a9714
+Channel-based.5.1 017d784c6164bf6119e1f6e6f129d3684bf717ca0d9fdee3dd67fc6ec7178b91
+Channel-based.5.1.4 a1fbad7ce73af8ca95559a48e3caca0f62abd6baa0b6866600d1b2d196615ed1
+Channel-based.7.1.4 b51dcfc068f67a9fec5937e64fc8c9490db57b7b7b72e81040b07638c83b6406
+Channel-based.mono 9e52836ae11d1285aa65737be43b3a41b6296aab293cda12e7b35e8b87b61bc2
+Channel-based.stereo 9196484a1cb9ae083b0d97d0abac7a3e92dae72015b10d545fb39603fea88b57
+Kitchen.Sink.contains.all.ADM.parameters 4adfba757a6faaea2a765410b7d58656ea20f7af59c3c6d98feaf36ee2f08fe8
+Object-based.22.0.1.track.1.object 0df21046393e1278b5187a2dadccf402222d4c448d469adb400a0ffd4211e3a6
+Object-based.22.0.1.track.22.objects 5d2c7d95cec684d19c95b990304d014f1c281c9a2dffe35535c6fe9539c78747
+Object-based.22.0.22.tracks.1.object 0f9fec57576646ff3d1f97cc94529d9478f5d295b2d4beec39b740a15c3d9091
+Object-based.22.2.1.track.1.object 56ac4b734d42aaef3b130d8e9875ff25f0ca900727c6a853a257d59403edd489
+Object-based.22.2.1.track.24.objects 4dcf8dc7d25ad380328dd9a0c179c88260e8c99010d27b4bab3f9aa139e19e21
+Object-based.22.2.24.tracks.1.object 325774f8d0a45c14ce5c4600198b1e1c2503845f0a7eed1915791d7289be9cfd
+Panned.Noise e0cd56a120dc4118d584f821be0ec400dae2f1ed60be746443204b7a06efe85b
+Panning.Engine.Noise.in.Cartesian.Coordinates 24f758c8c617a00d4dab5bc051b472a8964758a62ac828c30ca47f00be67a7da
+Panning.Engine.Noise.in.Polar.Coordinates 7e97d9cfe16bcf6776e4b84ccf01ac8b1f21a712f789bbfe59d09ae6c718ed5b
+Two.Language.Interactive.Programme.ADM.Test.File c431d7f7cdaa6147224c827aabd95568ae7d44af8860e6c5f46272e46905fc2e
+Two.Language.Programmes.ADM.Test.File 93b2e8b401577ad1eb08a2e11debecae13a6968cb9ada99e3e4dae03cb4ff165
