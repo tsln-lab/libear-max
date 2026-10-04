@@ -31,9 +31,10 @@ source, see [Building](/libear-max/building/).
 | [`mc.ear.play~`](/libear-max/adm/mc-ear-play/) | Plays an ADM file, audio and metadata together: the audio is streamed from disk to three multichannel outlets already routed for the three renderers, and the metadata is emitted from the audio clock. Plays files `mc.sfplay~` cannot open (RF64/BW64 over 4 GB) and converts a file at another sample rate to the audio's. |
 | [`mc.ear.record~`](/libear-max/adm/mc-ear-record/) | Records an ADM file, audio and metadata together: the multichannel input carries the objects' audio, a DirectSpeakers bed and an HOA scene, and the object metadata sent to it (as to `mc.ear.objects~`) is written as blocks timed by the recorded audio. Writes files over 4 GB as RF64. |
 
-All objects take a BS.2051 layout name as argument (`0+2+0`, `0+5+0`, `2+5+0`,
-`4+5+0`, `4+5+1`, `3+7+0`, `4+9+0`, `9+10+3`, `0+7+0`, `4+7+0`); the default is
-`0+5+0`. Send `layouts` to list the names, `channels` for the channel order of
+The renderers and gain calculators take a BS.2051 layout name as argument
+(`0+2+0`, `0+5+0`, `2+5+0`, `4+5+0`, `4+5+1`, `3+7+0`, `4+9+0`, `9+10+3`,
+`0+7+0`, `4+7+0`); the default is `0+5+0`. `mc.ear.encode~` takes the
+ambisonic order (0 to 8) instead, and the ADM file objects take no argument. Send `layouts` to list the names, `channels` for the channel order of
 the current layout, and `positions` for the nominal loudspeaker positions.
 
 ## Where the renderer comes from

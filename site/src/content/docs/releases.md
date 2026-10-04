@@ -16,7 +16,8 @@ Releases are cut with [release-please](https://github.com/googleapis/release-ple
 from [conventional commits](https://www.conventionalcommits.org/):
 
 1. Commit messages and pull request titles use the conventional format:
-   `feat: ...` for a new feature (minor version), `fix: ...` for a bug fix
+   `feat: ...` for a new feature (minor version, or patch version while the
+   version is below 1.0.0, see below), `fix: ...` for a bug fix
    (patch version), `feat!: ...` or a `BREAKING CHANGE:` footer for a breaking
    change. `docs:`, `ci:`, `chore:`, `refactor:`, `test:`, `build:` and
    `perf:` are accepted and do not trigger a release on their own (`docs:`

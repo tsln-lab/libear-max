@@ -5,8 +5,10 @@ description: The Developer ID certificate and App Store Connect key the Build wo
 
 The workflow signs the `.mxo` bundles with a Developer ID certificate, submits
 them to Apple's notary service and staples the tickets whenever the repository
-has the secrets below. Without them every signing step is skipped and the
-build is ad-hoc signed. Windows externals are not code-signed.
+has the `APPLE_SIGNING_IDENTITY` secret; the steps then need all the other
+secrets below, and fail when one is missing. Without `APPLE_SIGNING_IDENTITY`
+every signing step is skipped and the build is ad-hoc signed. Windows
+externals are not code-signed.
 
 ## Prerequisites
 

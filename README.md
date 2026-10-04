@@ -26,9 +26,10 @@ Markdown files under [`site/src/content/docs/`](site/src/content/docs/)).
 | `mc.ear.play~` | Plays an ADM file, audio and metadata together: the audio is streamed from disk to three multichannel outlets already routed for the three renderers, and the metadata is emitted from the audio clock. Plays files `mc.sfplay~` cannot open (RF64/BW64 over 4 GB) and converts a file at another sample rate to the audio's. |
 | `mc.ear.record~` | Records an ADM file, audio and metadata together: the multichannel input carries the objects' audio, a DirectSpeakers bed and an HOA scene, and the object metadata sent to it (as to `mc.ear.objects~`) is written as blocks timed by the recorded audio. Writes files over 4 GB as RF64. |
 
-All objects take a BS.2051 layout name as argument (`0+2+0`, `0+5+0`, `2+5+0`,
-`4+5+0`, `4+5+1`, `3+7+0`, `4+9+0`, `9+10+3`, `0+7+0`, `4+7+0`); the default is
-`0+5+0`. Each object is described on its own page of the documentation, with
+The renderers and gain calculators take a BS.2051 layout name as argument
+(`0+2+0`, `0+5+0`, `2+5+0`, `4+5+0`, `4+5+1`, `3+7+0`, `4+9+0`, `9+10+3`,
+`0+7+0`, `4+7+0`); the default is `0+5+0`. `mc.ear.encode~` takes the
+ambisonic order (0 to 8) instead, and the ADM file objects take no argument. Each object is described on its own page of the documentation, with
 the [ADM file objects](https://tsln-lab.github.io/libear-max/adm/ear-adm/),
 [Dolby Atmos masters](https://tsln-lab.github.io/libear-max/adm/dolby-atmos/)
 and [reference parity](https://tsln-lab.github.io/libear-max/reference-parity/)
@@ -50,7 +51,7 @@ needed by libear and libadm.
 ```sh
 git clone --recursive https://github.com/tsln-lab/libear-max.git
 cd libear-max
-cmake --preset macos      # or windows (with $env:VCPKG_ROOT set), or linux
+cmake --preset macos      # macos, windows ($env:VCPKG_ROOT set) or linux, in all three commands
 cmake --build --preset macos
 ctest --preset macos
 ```
