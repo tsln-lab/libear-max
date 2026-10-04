@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/tsln-lab/libear-max/compare/v1.1.0...v1.2.0) (2026-10-04)
+
+
+### Features
+
+* Dolby Atmos beds are read, with Cartesian DirectSpeakers positions ([#20](https://github.com/tsln-lab/libear-max/issues/20)) ([81983ac](https://github.com/tsln-lab/libear-max/commit/81983acec9e512e9248e6338a88fd2db92616ed8))
+
 ## [1.1.0](https://github.com/tsln-lab/libear-max/compare/v1.0.0...v1.1.0) (2026-10-03)
 
 
