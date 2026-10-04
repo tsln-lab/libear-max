@@ -26,7 +26,6 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -35,11 +34,86 @@
 #include <string>
 #include <vector>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
+#include <dirent.h>
+#include <sys/stat.h>
+#endif
+
 using namespace earmax;
 
 namespace {
 
 constexpr int k_skipped = 77;
+
+// ---- files (std::filesystem needs macOS 10.15, the externals target 10.11) --
+
+bool is_directory(const std::string& path)
+{
+#ifdef _WIN32
+    const DWORD attributes = GetFileAttributesA(path.c_str());
+    return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY);
+#else
+    struct stat info;
+    return stat(path.c_str(), &info) == 0 && S_ISDIR(info.st_mode);
+#endif
+}
+
+bool is_file(const std::string& path)
+{
+#ifdef _WIN32
+    const DWORD attributes = GetFileAttributesA(path.c_str());
+    return attributes != INVALID_FILE_ATTRIBUTES && !(attributes & FILE_ATTRIBUTE_DIRECTORY);
+#else
+    struct stat info;
+    return stat(path.c_str(), &info) == 0 && S_ISREG(info.st_mode);
+#endif
+}
+
+bool ends_with(const std::string& s, const std::string& suffix)
+{
+    return s.size() >= suffix.size() && s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+std::string basename_of(const std::string& path)
+{
+    const size_t slash = path.find_last_of("/\\");
+    return slash == std::string::npos ? path : path.substr(slash + 1);
+}
+
+/// the .wav files of a directory, as paths
+std::vector<std::string> wav_files(const std::string& dir)
+{
+    std::vector<std::string> out;
+#ifdef _WIN32
+    WIN32_FIND_DATAA entry;
+    HANDLE handle = FindFirstFileA((dir + "\\*.wav").c_str(), &entry);
+    if (handle != INVALID_HANDLE_VALUE) {
+        do {
+            if (!(entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+                out.push_back(dir + "\\" + entry.cFileName);
+            }
+        } while (FindNextFileA(handle, &entry));
+        FindClose(handle);
+    }
+#else
+    if (DIR* d = opendir(dir.c_str())) {
+        while (const dirent* entry = readdir(d)) {
+            const std::string name = entry->d_name;
+            const std::string path = dir + "/" + name;
+            if (ends_with(name, ".wav") && is_file(path)) {
+                out.push_back(path);
+            }
+        }
+        closedir(d);
+    }
+#endif
+    return out;
+}
 
 std::string num(double v)
 {
@@ -532,25 +606,21 @@ int main(int argc, char** argv)
         inputs.push_back(env);
     }
 
-    std::vector<std::filesystem::path> files;
+    std::vector<std::string> files;
     for (const auto& input : inputs) {
-        const std::filesystem::path p(input);
-        if (std::filesystem::is_directory(p)) {
-            for (const auto& entry : std::filesystem::directory_iterator(p)) {
-                if (entry.is_regular_file() && entry.path().extension() == ".wav") {
-                    files.push_back(entry.path());
-                }
-            }
+        if (is_directory(input)) {
+            const auto found = wav_files(input);
+            files.insert(files.end(), found.begin(), found.end());
         }
-        else if (std::filesystem::is_regular_file(p)) {
-            files.push_back(p);
+        else if (is_file(input)) {
+            files.push_back(input);
         }
         else {
             std::cerr << "adm_corpus: " << input << " is neither a file nor a directory\n";
             return 2;
         }
     }
-    std::sort(files.begin(), files.end());
+    std::sort(files.begin(), files.end(), [](const std::string& a, const std::string& b) { return basename_of(a) < basename_of(b); });
     if (files.empty()) {
         std::cout << "adm_corpus: the corpus has no .wav files; skipped\n";
         return k_skipped;
@@ -558,12 +628,13 @@ int main(int argc, char** argv)
 
     manifest found;
     for (const auto& file : files) {
-        std::cout << file.filename().string() << "\n";
-        const auto lines = examine(file.string(), layout_name);
+        const std::string name = basename_of(file);
+        std::cout << name << "\n";
+        const auto lines = examine(file, layout_name);
         for (const auto& line : lines) {
             std::cout << "  " << line << "\n";
         }
-        found[file.filename().string()] = lines;
+        found[name] = lines;
     }
 
     if (manifest_path.empty()) {
