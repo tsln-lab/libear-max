@@ -315,6 +315,7 @@ void compare_state(const std::string& where, const admio::object_state& a, const
 std::vector<std::string> compare(const admio::selection& a, const admio::selection& b, double length)
 {
     std::vector<std::string> out;
+    size_t renumbered = 0;    // items whose track moved (the writer puts the objects before the bed)
     // a block that lasts to the end of its object (end = infinity when the
     // object has no duration) comes back lasting to the end of the file:
     // the same span of audio
@@ -330,7 +331,7 @@ std::vector<std::string> compare(const admio::selection& a, const admio::selecti
         const std::string where = "object " + std::to_string(i + 1);
         const auto& x = a.objects[i];
         const auto& y = b.objects[i];
-        if (x.track != y.track) out.push_back(where + " track " + std::to_string(x.track) + " -> " + std::to_string(y.track));
+        if (x.track != y.track) ++renumbered;
         if (x.blocks.size() != y.blocks.size()) {
             out.push_back(where + " blocks " + std::to_string(x.blocks.size()) + " -> " + std::to_string(y.blocks.size()));
             continue;
@@ -356,7 +357,7 @@ std::vector<std::string> compare(const admio::selection& a, const admio::selecti
         const std::string where = "direct " + std::to_string(i + 1);
         const auto& x = a.direct[i];
         const auto& y = b.direct[i];
-        if (x.track != y.track) out.push_back(where + " track " + std::to_string(x.track) + " -> " + std::to_string(y.track));
+        if (x.track != y.track) ++renumbered;
         std::vector<std::string> lx, ly;
         for (const auto& l : x.labels) lx.push_back(admio::nominal_label(l));
         for (const auto& l : y.labels) ly.push_back(admio::nominal_label(l));
@@ -388,6 +389,9 @@ std::vector<std::string> compare(const admio::selection& a, const admio::selecti
         if (a.hoa[i].normalization != b.hoa[i].normalization) out.push_back(where + " normalization differs");
         if (a.hoa[i].tracks != b.hoa[i].tracks) out.push_back(where + " tracks differ");
     }
+    if (renumbered) {
+        out.push_back(std::to_string(renumbered) + " items on other tracks (the writer puts the objects before the bed, one track each)");
+    }
     return out;
 }
 
@@ -407,6 +411,22 @@ std::vector<std::string> examine(const std::string& path, const std::string& lay
     }
     lines.push_back("audio: " + std::to_string(file.info.channels) + " tracks " + std::to_string(file.info.samplerate) + " Hz "
                     + std::to_string(file.info.bitdepth) + " bit " + std::to_string(file.info.frames) + " frames");
+    // the file's chunks (whether a Dolby master carries dbmd, for one)
+    try {
+        auto reader = bw64::readFile(path);
+        std::string chunks;
+        for (const auto& header : reader->chunks()) {
+            std::string id;
+            for (int shift = 0; shift < 32; shift += 8) {
+                id += static_cast<char>((header.id >> shift) & 0xff);
+            }
+            while (!id.empty() && id.back() == ' ') id.pop_back();
+            chunks += (chunks.empty() ? "" : " ") + id + (id == "data" ? "" : " (" + std::to_string(header.size) + ")");
+        }
+        lines.push_back("chunks: " + chunks);
+    }
+    catch (const std::exception&) {
+    }
     const double length = file.info.samplerate ? static_cast<double>(file.info.frames) / file.info.samplerate : 0.0;
 
     admio::selection first;
