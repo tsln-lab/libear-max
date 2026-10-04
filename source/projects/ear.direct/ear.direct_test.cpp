@@ -50,6 +50,22 @@ SCENARIO("ear.direct maps DirectSpeakers channels onto a layout") {
             }
         }
 
+        WHEN("the channel is given in Cartesian coordinates") {
+            obj.speakerlabel(atoms{});
+            obj.cartesian = true;
+            obj.list(atoms{ -1.0, 1.0, 0.0 });
+            THEN("the corner of the cube lands on M+030, as the EAR's allocentric position of it") {
+                auto gains = last_list(obj, 0);
+                REQUIRE(gains[k_m030] == Approx(1.0));
+                REQUIRE(gains[k_m000] == Approx(0.0).margin(1e-6));
+            }
+            THEN("the attributes x y z move it") {
+                obj.x = 0.0;
+                auto gains = last_list(obj, 0);
+                REQUIRE(gains[k_m000] == Approx(1.0));
+            }
+        }
+
         WHEN("the channel is marked as LFE") {
             obj.speakerlabel(atoms{ symbol("LFE1") });
             obj.lfe = true;

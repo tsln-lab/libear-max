@@ -37,10 +37,13 @@
 #include "adm/utilities/object_creation.hpp"
 #include "adm/write.hpp"
 #include "bw64/bw64.hpp"
+#include "ear/bs2051.hpp"
+#include "ear/layout.hpp"
 
 #include "ear_max_hoa.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <fstream>
@@ -136,6 +139,47 @@ struct object_block {
     object_state state;
 };
 
+/// A speaker label without the BS.2051 URN prefix the common definitions
+/// use ("urn:itu:bs:2051:0:speaker:M+030" -> "M+030"), with the LFE
+/// spellings of the common definitions (LFE, LFEL, LFER) mapped to the
+/// layouts' (LFE1, LFE2) as libear does.
+inline std::string nominal_label(const std::string& label)
+{
+    std::string out = label;
+    const std::string prefix = "urn:itu:bs:2051:";
+    if (out.compare(0, prefix.size(), prefix) == 0) {
+        const size_t colon = out.find(":speaker:", prefix.size());
+        if (colon != std::string::npos) {
+            out = out.substr(colon + 9);
+        }
+    }
+    if (out == "LFE" || out == "LFEL") return "LFE1";
+    if (out == "LFER") return "LFE2";
+    return out;
+}
+
+/// The speaker labels of a Dolby Atmos master's bed (Dolby Atmos Master ADM
+/// Profile, table 2-14) translated to the BS.2051 labels of the loudspeakers
+/// at the same places, so that a layout with the loudspeaker takes the
+/// channel directly and the LFE is known as such; the profile's Cartesian
+/// positions coincide with the EAR's allocentric positions of these
+/// loudspeakers, so a layout without them places the channel as the EAR
+/// does, by position. Other labels are returned unchanged.
+inline std::string dolby_speaker_label(const std::string& label)
+{
+    static const std::pair<const char*, const char*> table[] = {
+        { "RC_L", "M+030" },   { "RC_R", "M-030" },   { "RC_C", "M+000" },   { "RC_LFE", "LFE1" },
+        { "RC_Lss", "M+090" }, { "RC_Rss", "M-090" }, { "RC_Lrs", "M+135" }, { "RC_Rrs", "M-135" },
+        { "RC_Lts", "U+090" }, { "RC_Rts", "U-090" }, { "RC_Ls", "M+110" },  { "RC_Rs", "M-110" },
+    };
+    for (const auto& entry : table) {
+        if (label == entry.first) {
+            return entry.second;
+        }
+    }
+    return label;
+}
+
 struct objects_item {
     std::string name;
     int track{ 0 };    ///< 0-based file track
@@ -150,10 +194,14 @@ struct direct_block {
     double end{ std::numeric_limits<double>::infinity() };
     std::vector<std::string> labels;
     bool has_position{ false };
+    bool cartesian{ false };    ///< the position is x y z (Dolby Atmos beds) instead of polar
     double azimuth{ 0.0 };
     double elevation{ 0.0 };
     double distance{ 1.0 };
-    std::vector<double> bounds;    ///< azimuthMin azimuthMax elevationMin elevationMax [distanceMin distanceMax]
+    double x{ 0.0 };
+    double y{ 1.0 };
+    double z{ 0.0 };
+    std::vector<double> bounds;    ///< azimuthMin azimuthMax elevationMin elevationMax [distanceMin distanceMax], or XMin XMax YMin YMax ZMin ZMax
 };
 
 struct direct_item {
@@ -162,10 +210,14 @@ struct direct_item {
     // the first block's parameters (the whole channel's for a static bed)
     std::vector<std::string> labels;
     bool has_position{ false };
+    bool cartesian{ false };    ///< the position is x y z (Dolby Atmos beds) instead of polar
     double azimuth{ 0.0 };
     double elevation{ 0.0 };
     double distance{ 1.0 };
-    std::vector<double> bounds;    ///< azimuthMin azimuthMax elevationMin elevationMax [distanceMin distanceMax]
+    double x{ 0.0 };
+    double y{ 1.0 };
+    double z{ 0.0 };
+    std::vector<double> bounds;    ///< azimuthMin azimuthMax elevationMin elevationMax [distanceMin distanceMax], or XMin XMax YMin YMax ZMin ZMax
     bool lfe{ false };
     std::string pack_id;
     std::vector<direct_block> blocks;    ///< every block, in time order
@@ -501,13 +553,12 @@ inline selection select_items(const loaded_file& file, int programme_index = -1)
                 if (pack) {
                     item.pack_id = adm::formatId(pack->get<adm::AudioPackFormatId>());
                 }
-                bool cartesian_warned = false;
                 for (const auto& b : cf->getElements<adm::AudioBlockFormatDirectSpeakers>()) {
                     direct_block block;
                     block.start = ctx.start + (b.has<adm::Rtime>() ? seconds(b.get<adm::Rtime>().get()) : 0.0);
                     block.end = b.has<adm::Duration>() ? block.start + seconds(b.get<adm::Duration>().get()) : ctx.end;
                     for (const auto& label : b.get<adm::SpeakerLabels>()) {
-                        block.labels.push_back(label.get());
+                        block.labels.push_back(dolby_speaker_label(label.get()));
                     }
                     if (b.has<adm::SphericalSpeakerPosition>() || b.has<adm::CartesianSpeakerPosition>()) {
                         if (b.has<adm::SphericalSpeakerPosition>()) {
@@ -531,9 +582,22 @@ inline selection select_items(const loaded_file& file, int programme_index = -1)
                                 }
                             }
                         }
-                        else if (!cartesian_warned) {
-                            cartesian_warned = true;
-                            result.warnings.push_back("audioObject '" + name + "': cartesian DirectSpeakers position is not supported; labels only");
+                        else {
+                            const auto cp = b.get<adm::CartesianSpeakerPosition>();
+                            block.has_position = true;
+                            block.cartesian = true;
+                            block.x = cp.get<adm::X>().get();
+                            block.y = cp.get<adm::Y>().get();
+                            block.z = cp.has<adm::Z>() ? cp.get<adm::Z>().get() : 0.0;
+                            if (cp.has<adm::XMin>() || cp.has<adm::XMax>() || cp.has<adm::YMin>() || cp.has<adm::YMax>()
+                                || cp.has<adm::ZMin>() || cp.has<adm::ZMax>()) {
+                                block.bounds = { cp.has<adm::XMin>() ? cp.get<adm::XMin>().get() : block.x,
+                                                 cp.has<adm::XMax>() ? cp.get<adm::XMax>().get() : block.x,
+                                                 cp.has<adm::YMin>() ? cp.get<adm::YMin>().get() : block.y,
+                                                 cp.has<adm::YMax>() ? cp.get<adm::YMax>().get() : block.y,
+                                                 cp.has<adm::ZMin>() ? cp.get<adm::ZMin>().get() : block.z,
+                                                 cp.has<adm::ZMax>() ? cp.get<adm::ZMax>().get() : block.z };
+                            }
                         }
                     }
                     item.blocks.push_back(std::move(block));
@@ -546,13 +610,25 @@ inline selection select_items(const loaded_file& file, int programme_index = -1)
                 const direct_block& first = item.blocks.front();
                 item.labels = first.labels;
                 item.has_position = first.has_position;
+                item.cartesian = first.cartesian;
                 item.azimuth = first.azimuth;
                 item.elevation = first.elevation;
                 item.distance = first.distance;
+                item.x = first.x;
+                item.y = first.y;
+                item.z = first.z;
                 item.bounds = first.bounds;
                 if (cf->has<adm::Frequency>()) {
                     const auto f = cf->get<adm::Frequency>();
                     item.lfe = f.has<adm::LowPass>();
+                }
+                // an LFE label marks the channel too, as libear's calculator
+                // takes it (a Dolby Atmos master has no frequency element)
+                for (const auto& label : item.labels) {
+                    const std::string nominal = nominal_label(label);
+                    if (nominal == "LFE1" || nominal == "LFE2") {
+                        item.lfe = true;
+                    }
                 }
                 result.direct.push_back(std::move(item));
             }
@@ -664,10 +740,14 @@ struct captured_direct_block {
     double time{ 0.0 };
     std::vector<std::string> labels;
     bool has_position{ false };
+    bool cartesian{ false };    ///< the position is x y z instead of polar
     double azimuth{ 0.0 };
     double elevation{ 0.0 };
     double distance{ 1.0 };
-    std::vector<double> bounds;
+    double x{ 0.0 };
+    double y{ 1.0 };
+    double z{ 0.0 };
+    std::vector<double> bounds;    ///< polar: azimuthMin azimuthMax elevationMin elevationMax [distanceMin distanceMax]; Cartesian: XMin XMax YMin YMax ZMin ZMax
 };
 
 /// One captured DirectSpeakers channel: what mc.ear.direct~ takes for an
@@ -678,10 +758,14 @@ struct captured_direct_block {
 struct captured_direct_channel {
     std::vector<std::string> labels;
     bool has_position{ false };
+    bool cartesian{ false };    ///< the position is x y z instead of polar
     double azimuth{ 0.0 };
     double elevation{ 0.0 };
     double distance{ 1.0 };
-    std::vector<double> bounds;    ///< azimuthMin azimuthMax elevationMin elevationMax [distanceMin distanceMax], or empty
+    double x{ 0.0 };
+    double y{ 1.0 };
+    double z{ 0.0 };
+    std::vector<double> bounds;    ///< polar: azimuthMin azimuthMax elevationMin elevationMax [distanceMin distanceMax]; Cartesian: XMin XMax YMin YMax ZMin ZMax; or empty
     bool lfe{ false };
     std::string pack_id;    ///< common definitions audioPackFormatID (AP_0001xxxx) of the bed, or empty for a custom bed
     std::vector<captured_direct_block> blocks;    ///< the timed changes, when the bed was captured over time
@@ -868,30 +952,33 @@ inline void add_object_blocks(adm::SimpleObjectHolder& holder, const captured_ob
     }
 }
 
-/// A speaker label without the BS.2051 URN prefix the common definitions
-/// use ("urn:itu:bs:2051:0:speaker:M+030" -> "M+030"), with the LFE
-/// spellings of the common definitions (LFE, LFEL, LFER) mapped to the
-/// layouts' (LFE1, LFE2) as libear does.
-inline std::string nominal_label(const std::string& label)
+/// The nominal position of a common definitions channel: what the file
+/// reconstructs for it, and what 'inputlayout' sets.
+struct common_channel {
+    adm::AudioTrackFormatId track_id;    ///< AT_<channel id>_01 in the common definitions
+    std::vector<std::array<double, 3>> nominal;    ///< the positions (azimuth, elevation, distance) the channel stands for
+};
+
+/// Whether a polar position is one of the nominal ones.
+inline bool nominal_position(const common_channel& channel, double azimuth, double elevation, double distance)
 {
-    std::string out = label;
-    const std::string prefix = "urn:itu:bs:2051:";
-    if (out.compare(0, prefix.size(), prefix) == 0) {
-        const size_t colon = out.find(":speaker:", prefix.size());
-        if (colon != std::string::npos) {
-            out = out.substr(colon + 9);
+    const double tolerance = 1e-6;
+    for (const auto& p : channel.nominal) {
+        if (std::abs(p[0] - azimuth) <= tolerance && std::abs(p[1] - elevation) <= tolerance
+            && std::abs(p[2] - distance) <= tolerance) {
+            return true;
         }
     }
-    if (out == "LFE" || out == "LFEL") return "LFE1";
-    if (out == "LFER") return "LFE2";
-    return out;
+    return false;
 }
 
 /// A bed whose channels all name the same common definitions pack and
-/// carry one label each that names a distinct channel of that pack: it is
-/// written as a reference to that pack and its channels (as the EAR's
-/// tools do), otherwise as custom channel formats. Returns the pack id, or
-/// empty with `why_not` set when the pack cannot be used.
+/// carry one label each that names a distinct channel of that pack, at its
+/// nominal position and without bounds: it is written as a reference to
+/// that pack and its channels (as the EAR's tools do), otherwise as custom
+/// channel formats, so that positions and bounds edited after 'inputlayout'
+/// are kept. Returns the pack id, or empty with `why_not` set when the
+/// pack cannot be used.
 inline adm::AudioPackFormatId common_bed_pack(const captured_bed& bed, std::vector<adm::AudioTrackFormatId>& track_ids,
                                               std::vector<std::string>& labels, std::string& why_not)
 {
@@ -914,9 +1001,27 @@ inline adm::AudioPackFormatId common_bed_pack(const captured_bed& bed, std::vect
         why_not = "packformat " + id + " is not a common definitions layout";
         return none;
     }
-    // the pack's channels by nominal label, with the track format of each
-    // (AT_<channel id>_01 in the common definitions)
-    std::map<std::string, adm::AudioTrackFormatId> track_of_label;
+    // the layout the pack stands for, when libear knows it: 'inputlayout'
+    // sets its nominal positions, which differ from the common definitions'
+    // for the LFE
+    std::map<std::string, std::array<double, 3>> layout_position;
+    for (const auto& entry : adm::audioPackFormatLookupTable()) {
+        if (entry.second != pack_id) {
+            continue;
+        }
+        try {
+            const ear::Layout layout = ear::getLayout(entry.first);
+            for (const auto& channel : layout.channels()) {
+                const auto pos = channel.polarPositionNominal();
+                layout_position[nominal_label(channel.name())] = { pos.azimuth, pos.elevation, pos.distance };
+            }
+        }
+        catch (const std::exception&) {
+        }
+        break;
+    }
+    // the pack's channels by nominal label
+    std::map<std::string, common_channel> channel_of_label;
     for (const auto& cf : pack->getReferences<adm::AudioChannelFormat>()) {
         std::string channel_id = adm::formatId(cf->get<adm::AudioChannelFormatId>());    // AC_0001xxxx
         channel_id.replace(0, 3, "AT_");
@@ -931,8 +1036,21 @@ inline adm::AudioPackFormatId common_bed_pack(const captured_bed& bed, std::vect
             continue;
         }
         for (const auto& b : cf->getElements<adm::AudioBlockFormatDirectSpeakers>()) {
+            common_channel channel;
+            channel.track_id = track_id;
+            if (b.has<adm::SphericalSpeakerPosition>()) {
+                const auto sp = b.get<adm::SphericalSpeakerPosition>();
+                channel.nominal.push_back({ static_cast<double>(sp.get<adm::Azimuth>().get()),
+                                            static_cast<double>(sp.get<adm::Elevation>().get()),
+                                            sp.has<adm::Distance>() ? static_cast<double>(sp.get<adm::Distance>().get()) : 1.0 });
+            }
             for (const auto& label : b.get<adm::SpeakerLabels>()) {
-                track_of_label.emplace(nominal_label(label.get()), track_id);
+                const std::string name = nominal_label(label.get());
+                const auto layout = layout_position.find(name);
+                if (layout != layout_position.end()) {
+                    channel.nominal.push_back(layout->second);
+                }
+                channel_of_label.emplace(name, channel);
             }
             break;
         }
@@ -952,12 +1070,26 @@ inline adm::AudioPackFormatId common_bed_pack(const captured_bed& bed, std::vect
             return none;
         }
         const std::string label = nominal_label(ch.labels.front());
-        const auto it = track_of_label.find(label);
-        if (it == track_of_label.end() || !seen.insert(label).second) {
+        const auto it = channel_of_label.find(label);
+        if (it == channel_of_label.end() || !seen.insert(label).second) {
             why_not = "packformat " + id + ": speaker label " + ch.labels.front() + " is not a distinct channel of that layout";
             return none;
         }
-        track_ids.push_back(it->second);
+        if (ch.cartesian) {
+            why_not = "packformat " + id + ": " + ch.labels.front() + " is given in Cartesian coordinates (the layout's channels are polar)";
+            return none;
+        }
+        if (!ch.bounds.empty()) {
+            why_not = "packformat " + id + ": " + ch.labels.front() + " has position bounds (the layout's channels have none)";
+            return none;
+        }
+        if (ch.has_position && !nominal_position(it->second, ch.azimuth, ch.elevation, ch.distance)) {
+            std::ostringstream pos;
+            pos << ch.azimuth << " " << ch.elevation << " " << ch.distance;
+            why_not = "packformat " + id + ": " + ch.labels.front() + " is not at its nominal position (" + pos.str() + ")";
+            return none;
+        }
+        track_ids.push_back(it->second.track_id);
         labels.push_back(label);
     }
     return pack_id;
@@ -1027,9 +1159,13 @@ inline std::shared_ptr<adm::Document> build_document(const captured_programme& c
                     captured_direct_block only;
                     only.labels = ch.labels;
                     only.has_position = ch.has_position;
+                    only.cartesian = ch.cartesian;
                     only.azimuth = ch.azimuth;
                     only.elevation = ch.elevation;
                     only.distance = ch.distance;
+                    only.x = ch.x;
+                    only.y = ch.y;
+                    only.z = ch.z;
                     only.bounds = ch.bounds;
                     blocks = { only };
                 }
@@ -1044,7 +1180,20 @@ inline std::shared_ptr<adm::Document> build_document(const captured_programme& c
                     for (const auto& label : c.labels) {
                         block.add(adm::SpeakerLabel(label));
                     }
-                    if (c.has_position) {
+                    if (c.has_position && c.cartesian) {
+                        adm::CartesianSpeakerPosition position(adm::X(static_cast<float>(c.x)), adm::Y(static_cast<float>(c.y)),
+                                                               adm::Z(static_cast<float>(c.z)));
+                        if (c.bounds.size() >= 6) {
+                            position.set(adm::XMin(static_cast<float>(c.bounds[0])));
+                            position.set(adm::XMax(static_cast<float>(c.bounds[1])));
+                            position.set(adm::YMin(static_cast<float>(c.bounds[2])));
+                            position.set(adm::YMax(static_cast<float>(c.bounds[3])));
+                            position.set(adm::ZMin(static_cast<float>(c.bounds[4])));
+                            position.set(adm::ZMax(static_cast<float>(c.bounds[5])));
+                        }
+                        block.set(position);
+                    }
+                    else if (c.has_position) {
                         adm::SphericalSpeakerPosition position(adm::Azimuth(static_cast<float>(c.azimuth)),
                                                               adm::Elevation(static_cast<float>(c.elevation)),
                                                               adm::Distance(static_cast<float>(c.distance)));

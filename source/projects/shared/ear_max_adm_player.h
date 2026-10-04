@@ -357,7 +357,13 @@ private:
         }
         out.direct(labels);
         if (block.has_position) {
-            out.direct(atoms{ symbol("setvalue"), n, symbol("position"), block.azimuth, block.elevation, block.distance });
+            out.direct(atoms{ symbol("setvalue"), n, symbol("cartesian"), block.cartesian ? 1 : 0 });
+            if (block.cartesian) {
+                out.direct(atoms{ symbol("setvalue"), n, symbol("position"), block.x, block.y, block.z });
+            }
+            else {
+                out.direct(atoms{ symbol("setvalue"), n, symbol("position"), block.azimuth, block.elevation, block.distance });
+            }
         }
         atoms bounds{ symbol("setvalue"), n, symbol("bounds") };
         for (const double b : block.bounds) {

@@ -165,6 +165,33 @@ SCENARIO("mc.ear.direct~ renders a channel bed to a multichannel loudspeaker sig
             }
         }
 
+        WHEN("bed channels are given in Cartesian coordinates, as a Dolby Atmos master places them") {
+            obj.setvalue(atoms{ 1, symbol("cartesian"), 1 });
+            obj.setvalue(atoms{ 1, symbol("position"), -1.0, 1.0, 0.0 });    // L
+            obj.setvalue(atoms{ 2, symbol("cartesian"), 1 });
+            obj.setvalue(atoms{ 2, symbol("position"), -1.0, 0.0, 0.0 });    // Lss: no side loudspeaker in 4+5+0
+            obj.setvalue(atoms{ 3, symbol("cartesian"), 1 });
+            obj.setvalue(atoms{ 3, symbol("position"), -1.0, 1.0, -1.0 });    // LFE
+            obj.setvalue(atoms{ 3, symbol("lfe"), 1 });
+            THEN("a corner of the cube lands on the loudspeaker at that allocentric position, the rest is panned") {
+                REQUIRE(obj.gains(0)[0] == Approx(1.0));    // M+030
+                const auto& side = obj.gains(1);
+                REQUIRE(side[0] > 0.1);    // between M+030 ...
+                REQUIRE(side[4] > 0.1);    // ... and M+110
+                REQUIRE(obj.gains(2)[3] == Approx(1.0));    // LFE1
+            }
+            THEN("a position with two values is refused, and the bounds take six") {
+                obj.setvalue(atoms{ 1, symbol("position"), 30.0, 0.0 });
+                REQUIRE(obj.metadata(0).cartesian_position.X == Approx(-1.0));
+                obj.setvalue(atoms{ 1, symbol("bounds"), 0.0, 10.0, 0.0, 10.0 });
+                REQUIRE(obj.metadata(0).bounds.empty());
+                obj.setvalue(atoms{ 1, symbol("bounds"), -1.0, -0.5, 0.5, 1.0, -0.5, 0.5 });
+                REQUIRE(obj.metadata(0).bounds.size() == 6);
+                obj.setvalue(atoms{ 1, symbol("cartesian"), 0 });
+                REQUIRE(obj.metadata(0).bounds.empty());    // the bounds belong to the other coordinate system
+            }
+        }
+
         WHEN("non-finite bounds or positions are sent") {
             obj.setvalue(atoms{ 1, symbol("bounds"), 0.0, std::numeric_limits<double>::infinity(), 0.0, 0.0 });
             obj.setvalue(atoms{ 1, symbol("azimuth"), std::numeric_limits<double>::quiet_NaN() });

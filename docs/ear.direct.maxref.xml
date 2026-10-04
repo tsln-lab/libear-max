@@ -41,8 +41,15 @@
 			<description>Calculate and output the gains.</description>
 		</method>
 		<method name='bounds'>
-			<digest>Set the position bounds: azimuthMin azimuthMax elevationMin elevationMax [distanceMin distanceMax]</digest>
-			<description>Set the position bounds: azimuthMin azimuthMax elevationMin elevationMax [distanceMin distanceMax]. A loudspeaker within the bounds is used directly. Send without arguments to clear.</description>
+			<digest>Set the position bounds: azimuthMin azimuthMax elevationMin elevationMax [distanceMin distanceMax], or XMin XMax YMin YMax ZMin ZMax when cartesian is on</digest>
+			<description>Set the position bounds: azimuthMin azimuthMax elevationMin elevationMax [distanceMin distanceMax], or XMin XMax YMin YMax ZMin ZMax when cartesian is on. A loudspeaker within the bounds is used directly. Send without arguments to clear.</description>
+		</method>
+		<method name='cartesian'>
+			<arglist>
+				<arg name='cartesian' optional='0' type='int' />
+			</arglist>
+			<digest>Set the cartesian attribute</digest>
+			<description>Set the <at>cartesian</at> attribute. Give the nominal position in Cartesian coordinates (x y z in the ADM's cube, as Dolby Atmos masters give their bed channels) instead of azimuth, elevation and distance. Bounds are then XMin XMax YMin YMax ZMin ZMax; switching clears them.</description>
 		</method>
 		<method name='channels'>
 			<digest>Output the channel names of the layout from the right outlet</digest>
@@ -81,8 +88,8 @@
 			<description>Set the <at>lfe</at> attribute. Mark the channel as LFE (sets a 120 Hz low-pass frequency element), so it is routed to an LFE loudspeaker only.</description>
 		</method>
 		<method name='list'>
-			<digest>Set the nominal position: azimuth elevation and optional distance</digest>
-			<description>Set the nominal position: azimuth elevation and optional distance.</description>
+			<digest>Set the nominal position: azimuth elevation and optional distance, or x y z when cartesian is on</digest>
+			<description>Set the nominal position: azimuth elevation and optional distance, or x y z when cartesian is on.</description>
 		</method>
 		<method name='packformat'>
 			<arglist>
@@ -99,6 +106,27 @@
 			<digest>Set the speaker labels of the channel, such as M+030 or urn:itu:bs:2051:0:speaker:M+030</digest>
 			<description>Set the speaker labels of the channel, such as M+030 or urn:itu:bs:2051:0:speaker:M+030. Labels take precedence over the position. Send without arguments to clear.</description>
 		</method>
+		<method name='x'>
+			<arglist>
+				<arg name='x' optional='0' type='float' />
+			</arglist>
+			<digest>Set the x attribute</digest>
+			<description>Set the <at>x</at> attribute. Cartesian X of the channel (-1 left to 1 right), used when cartesian is on.</description>
+		</method>
+		<method name='y'>
+			<arglist>
+				<arg name='y' optional='0' type='float' />
+			</arglist>
+			<digest>Set the y attribute</digest>
+			<description>Set the <at>y</at> attribute. Cartesian Y of the channel (-1 back to 1 front), used when cartesian is on.</description>
+		</method>
+		<method name='z'>
+			<arglist>
+				<arg name='z' optional='0' type='float' />
+			</arglist>
+			<digest>Set the z attribute</digest>
+			<description>Set the <at>z</at> attribute. Cartesian Z of the channel (-1 floor to 1 ceiling), used when cartesian is on.</description>
+		</method>
 	</methodlist>
 
 	<!--ATTRIBUTES-->
@@ -111,6 +139,10 @@
 		<attribute name='azimuth' get='1' set='1' type='float64' size='1'>
 			<digest>Nominal azimuth of the channel in degrees; 0 is front, positive is anticlockwise</digest>
 			<description>Nominal azimuth of the channel in degrees; 0 is front, positive is anticlockwise. Default: 0.</description>
+		</attribute>
+		<attribute name='cartesian' get='1' set='1' type='long' size='1'>
+			<digest>Give the nominal position in Cartesian coordinates (x y z in the ADM's cube, as Dolby Atmos masters give their bed channels) instead of azimuth, elevation and distance</digest>
+			<description>Give the nominal position in Cartesian coordinates (x y z in the ADM's cube, as Dolby Atmos masters give their bed channels) instead of azimuth, elevation and distance. Bounds are then XMin XMax YMin YMax ZMin ZMax; switching clears them. Default: 0.</description>
 		</attribute>
 		<attribute name='distance' get='1' set='1' type='float64' size='1'>
 			<digest>Nominal distance of the channel (normally 1)</digest>
@@ -131,6 +163,18 @@
 		<attribute name='packformat' get='1' set='1' type='symbol' size='1'>
 			<digest>Optional audioPackFormatID of the pack this channel belongs to, such as AP_00010003; enables pack-specific mapping rules</digest>
 			<description>Optional audioPackFormatID of the pack this channel belongs to, such as AP_00010003; enables pack-specific mapping rules.</description>
+		</attribute>
+		<attribute name='x' get='1' set='1' type='float64' size='1'>
+			<digest>Cartesian X of the channel (-1 left to 1 right), used when cartesian is on</digest>
+			<description>Cartesian X of the channel (-1 left to 1 right), used when cartesian is on. Default: 0.</description>
+		</attribute>
+		<attribute name='y' get='1' set='1' type='float64' size='1'>
+			<digest>Cartesian Y of the channel (-1 back to 1 front), used when cartesian is on</digest>
+			<description>Cartesian Y of the channel (-1 back to 1 front), used when cartesian is on. Default: 1.</description>
+		</attribute>
+		<attribute name='z' get='1' set='1' type='float64' size='1'>
+			<digest>Cartesian Z of the channel (-1 floor to 1 ceiling), used when cartesian is on</digest>
+			<description>Cartesian Z of the channel (-1 floor to 1 ceiling), used when cartesian is on. Default: 0.</description>
 		</attribute>
 	</attributelist>
 

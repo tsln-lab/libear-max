@@ -247,7 +247,8 @@ public:
     message<> direct{ this, "direct",
         "Metadata of the bed written after the objects (see the directchans attribute), in the mc.ear.direct~ format: "
         "'direct setvalue N speakerlabel M+030' (N is 1-based; 0 sets all channels), 'direct setvalue N position az el "
-        "[dist]', azimuth, elevation, distance, bounds, lfe, packformat, 'direct applyvalues parameter v1 v2 ...', "
+        "[dist]', azimuth, elevation, distance, cartesian (then position is x y z), x, y, z, bounds, lfe, packformat, "
+        "'direct applyvalues parameter v1 v2 ...', "
         "'direct inputlayout 0+5+0' (labels, positions and LFE after a BS.2051 layout, written as a reference to the "
         "common definitions when the layout has one), 'direct name symbol' (the bed's audioObject name), or 'direct "
         "parameter values' for all channels. While 'record' runs, a change of a channel's labels, position or bounds "

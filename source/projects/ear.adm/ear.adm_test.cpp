@@ -584,6 +584,136 @@ SCENARIO("ear.adm keeps a zone's label through a file") {
     }
 }
 
+SCENARIO("ear.adm reads the bed of a Dolby Atmos master") {
+    ext_main(nullptr);
+
+    GIVEN("a file shaped like a Dolby Atmos master: a 7.1.2 bed with Dolby labels and Cartesian positions, then a Cartesian object") {
+        // the bed of the Dolby Atmos Master ADM Profile (table 2-14): custom
+        // channel formats, cartesian 1, no frequency element for the LFE
+        struct dolby_channel {
+            const char* label;
+            double x, y, z;
+        };
+        const dolby_channel channels[] = {
+            { "RC_L", -1.0, 1.0, 0.0 },   { "RC_R", 1.0, 1.0, 0.0 },   { "RC_C", 0.0, 1.0, 0.0 },   { "RC_LFE", -1.0, 1.0, -1.0 },
+            { "RC_Lss", -1.0, 0.0, 0.0 }, { "RC_Rss", 1.0, 0.0, 0.0 }, { "RC_Lrs", -1.0, -1.0, 0.0 }, { "RC_Rrs", 1.0, -1.0, 0.0 },
+            { "RC_Lts", -1.0, 0.0, 1.0 }, { "RC_Rts", 1.0, 0.0, 1.0 },
+        };
+        const std::string audio = write_audio("dolby_audio.wav", 11, 4800);
+        const std::string out = std::string(EARMAX_TEST_OUT_DIR) + "/dolby_bed.wav";
+        admio::captured_programme captured;
+        captured.name = "Atmos_Master";
+        admio::captured_object object;
+        object.name = "Atmos_Obj_11";
+        admio::object_state state;
+        state.cartesian = true;
+        state.x = 0.5;
+        state.y = 0.5;
+        state.z = 0.25;
+        object.blocks.push_back({ 0.0, 0.0, state });
+        captured.objects.push_back(object);
+        captured.bed.name = "Atmos_Bed_1";
+        for (const auto& c : channels) {
+            admio::captured_direct_channel ch;
+            ch.labels = { c.label };
+            ch.has_position = true;
+            ch.cartesian = true;
+            ch.x = c.x;
+            ch.y = c.y;
+            ch.z = c.z;
+            captured.bed.channels.push_back(ch);
+        }
+        std::vector<bw64::AudioId> chna_ids;
+        std::vector<std::string> warnings;
+        auto doc = admio::build_document(captured, 0.1, chna_ids, warnings);
+        const std::string xml = admio::to_xml(doc);
+        REQUIRE(xml.find("RC_Lts") != std::string::npos);
+        REQUIRE(xml.find("coordinate=\"X\"") != std::string::npos);
+        REQUIRE(xml.find("lowPass") == std::string::npos);
+        std::remove(out.c_str());
+        admio::write_file(out, audio, doc, chna_ids);
+
+        test_wrapper<ear_adm> an_instance;
+        ear_adm& obj = an_instance;
+        obj.read(atoms{ symbol(out) });
+        REQUIRE(obj.loaded());
+
+        THEN("the bed's channels come back with the BS.2051 labels of the same loudspeakers, their Cartesian positions and the LFE") {
+            const auto& items = obj.items();
+            REQUIRE(items.warnings.empty());
+            REQUIRE(items.direct.size() == 10);
+            const std::vector<std::string> labels{ "M+030", "M-030", "M+000", "LFE1", "M+090", "M-090", "M+135", "M-135", "U+090", "U-090" };
+            for (size_t i = 0; i < labels.size(); ++i) {
+                REQUIRE(items.direct[i].labels == std::vector<std::string>{ labels[i] });
+                REQUIRE(items.direct[i].track == static_cast<int>(i + 1));
+                REQUIRE(items.direct[i].has_position);
+                REQUIRE(items.direct[i].cartesian);
+                REQUIRE(items.direct[i].x == Approx(channels[i].x));
+                REQUIRE(items.direct[i].y == Approx(channels[i].y));
+                REQUIRE(items.direct[i].z == Approx(channels[i].z));
+                REQUIRE(items.direct[i].lfe == (i == 3));
+                REQUIRE(items.direct[i].pack_id.empty() == false);    // the custom pack of the bed
+            }
+            REQUIRE(items.objects.size() == 1);
+            REQUIRE(items.objects[0].blocks[0].state.cartesian);
+            REQUIRE(items.objects[0].blocks[0].state.x == Approx(0.5));
+        }
+
+        THEN("mc.ear.direct~ is sent the channels in Cartesian coordinates") {
+            const auto direct = messages(obj, k_direct);
+            REQUIRE(contains(direct, "setvalue 1 speakerlabel M+030"));
+            REQUIRE(contains(direct, "setvalue 1 cartesian 1"));
+            REQUIRE(contains(direct, "setvalue 1 position -1 1 0"));
+            REQUIRE(contains(direct, "setvalue 4 speakerlabel LFE1"));
+            REQUIRE(contains(direct, "setvalue 4 lfe 1"));
+            REQUIRE(contains(direct, "setvalue 9 speakerlabel U+090"));
+            REQUIRE(contains(direct, "setvalue 9 position -1 0 1"));
+        }
+    }
+
+    GIVEN("an instance capturing a bed channel given in Cartesian coordinates") {
+        test_wrapper<ear_adm> an_instance;
+        ear_adm& obj = an_instance;
+        obj.chans = 1;
+        obj.directchans = 2;
+        obj.direct(atoms{ symbol("setvalue"), 1, symbol("cartesian"), 1 });
+        obj.direct(atoms{ symbol("setvalue"), 1, symbol("position"), -1.0, 0.0, 1.0 });
+        obj.direct(atoms{ symbol("setvalue"), 1, symbol("speakerlabel"), symbol("U+090") });
+        obj.direct(atoms{ symbol("setvalue"), 1, symbol("bounds"), -1.0, -0.5, -0.5, 0.5, 0.5, 1.0 });
+        obj.direct(atoms{ symbol("setvalue"), 2, symbol("position"), 30.0, 0.0 });
+
+        WHEN("the capture is written and read back") {
+            const std::string audio = write_audio("cartesian_bed_audio.wav", 3, 4800);
+            const std::string out = std::string(EARMAX_TEST_OUT_DIR) + "/cartesian_bed.wav";
+            std::remove(out.c_str());
+            obj.write(atoms{ symbol(out), symbol(audio) });
+            REQUIRE(count_prefix(messages(obj, k_info), "written ") == 1);
+
+            test_wrapper<ear_adm> another_instance;
+            ear_adm& reader = another_instance;
+            reader.read(atoms{ symbol(out) });
+            REQUIRE(reader.loaded());
+
+            THEN("the Cartesian channel keeps its position and bounds, the polar one stays polar") {
+                const auto& items = reader.items();
+                REQUIRE(items.direct.size() == 2);
+                REQUIRE(items.direct[0].cartesian);
+                REQUIRE(items.direct[0].x == Approx(-1.0));
+                REQUIRE(items.direct[0].y == Approx(0.0));
+                REQUIRE(items.direct[0].z == Approx(1.0));
+                REQUIRE(items.direct[0].bounds == std::vector<double>{ -1.0, -0.5, -0.5, 0.5, 0.5, 1.0 });
+                REQUIRE_FALSE(items.direct[1].cartesian);
+                REQUIRE(items.direct[1].azimuth == Approx(30.0));
+                const auto direct = messages(reader, k_direct);
+                REQUIRE(contains(direct, "setvalue 1 cartesian 1"));
+                REQUIRE(contains(direct, "setvalue 1 bounds -1 -0.5 -0.5 0.5 0.5 1"));
+                REQUIRE(contains(direct, "setvalue 2 cartesian 0"));
+                REQUIRE(contains(direct, "setvalue 2 position 30 0 1"));
+            }
+        }
+    }
+}
+
 SCENARIO("ear.adm captures a timed bed and plays its blocks back") {
     ext_main(nullptr);
 
@@ -883,6 +1013,71 @@ SCENARIO("ear.adm writes a DirectSpeakers bed and an HOA scene after the objects
                 REQUIRE(items.direct.size() == 2);
                 REQUIRE(items.direct[1].labels == std::vector<std::string>{ "M+110" });
                 REQUIRE(items.direct[1].pack_id != "AP_00010002");
+            }
+        }
+
+        WHEN("a layout channel is moved after inputlayout") {
+            obj.directchans = 2;
+            obj.direct(atoms{ symbol("inputlayout"), symbol("0+2+0") });
+            obj.direct(atoms{ symbol("setvalue"), 2, symbol("position"), -45.0, 10.0, 1.0 });
+            obj.hoa(atoms{ symbol("order"), -1 });
+            const std::string audio = write_audio("bed_moved_audio.wav", 3, 4800);
+            const std::string out = std::string(EARMAX_TEST_OUT_DIR) + "/bed_moved.wav";
+            std::remove(out.c_str());
+            obj.write(atoms{ symbol(out), symbol(audio) });
+            THEN("the bed is written with its own channel formats, keeping the position") {
+                const auto items = admio::select_items(admio::load_file(out));
+                REQUIRE(items.direct.size() == 2);
+                REQUIRE(items.direct[1].labels == std::vector<std::string>{ "M-030" });
+                REQUIRE(items.direct[1].pack_id != "AP_00010002");
+                REQUIRE(items.direct[1].pack_id.rfind("AP_0001", 0) == 0);
+                REQUIRE(items.direct[1].azimuth == Approx(-45.0));
+                REQUIRE(items.direct[1].elevation == Approx(10.0));
+                REQUIRE(items.direct[0].azimuth == Approx(30.0));
+            }
+        }
+
+        WHEN("a layout channel is given bounds or Cartesian coordinates after inputlayout") {
+            obj.directchans = 2;
+            obj.direct(atoms{ symbol("inputlayout"), symbol("0+2+0") });
+            obj.direct(atoms{ symbol("setvalue"), 1, symbol("bounds"), 20.0, 40.0, -5.0, 5.0 });
+            obj.direct(atoms{ symbol("setvalue"), 2, symbol("cartesian"), 1 });
+            obj.direct(atoms{ symbol("setvalue"), 2, symbol("position"), 1.0, 1.0, 0.0 });
+            obj.hoa(atoms{ symbol("order"), -1 });
+            const std::string audio = write_audio("bed_edited_audio.wav", 3, 4800);
+            const std::string out = std::string(EARMAX_TEST_OUT_DIR) + "/bed_edited.wav";
+            std::remove(out.c_str());
+            obj.write(atoms{ symbol(out), symbol(audio) });
+            THEN("the bed is written with its own channel formats, keeping the bounds and coordinates") {
+                const auto items = admio::select_items(admio::load_file(out));
+                REQUIRE(items.direct.size() == 2);
+                REQUIRE(items.direct[0].pack_id != "AP_00010002");
+                REQUIRE(items.direct[0].pack_id.rfind("AP_0001", 0) == 0);
+                REQUIRE(items.direct[0].labels == std::vector<std::string>{ "M+030" });
+                REQUIRE(items.direct[0].bounds == std::vector<double>{ 20.0, 40.0, -5.0, 5.0 });
+                REQUIRE(!items.direct[0].cartesian);
+                REQUIRE(items.direct[1].labels == std::vector<std::string>{ "M-030" });
+                REQUIRE(items.direct[1].cartesian);
+                REQUIRE(items.direct[1].x == Approx(1.0));
+                REQUIRE(items.direct[1].y == Approx(1.0));
+                REQUIRE(items.direct[1].z == Approx(0.0));
+            }
+        }
+
+        WHEN("a layout channel is moved and then put back after inputlayout") {
+            obj.directchans = 2;
+            obj.direct(atoms{ symbol("inputlayout"), symbol("0+2+0") });
+            obj.direct(atoms{ symbol("setvalue"), 2, symbol("azimuth"), -45.0 });
+            obj.direct(atoms{ symbol("setvalue"), 2, symbol("azimuth"), -30.0 });
+            obj.hoa(atoms{ symbol("order"), -1 });
+            const std::string audio = write_audio("bed_restored_audio.wav", 3, 4800);
+            const std::string out = std::string(EARMAX_TEST_OUT_DIR) + "/bed_restored.wav";
+            std::remove(out.c_str());
+            obj.write(atoms{ symbol(out), symbol(audio) });
+            THEN("the bed still references the common definitions layout") {
+                const auto items = admio::select_items(admio::load_file(out));
+                REQUIRE(items.direct.size() == 2);
+                REQUIRE(items.direct[1].pack_id == "AP_00010002");
             }
         }
 

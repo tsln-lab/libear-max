@@ -147,7 +147,8 @@ public:
 
     message<> setvalue{ this, "setvalue",
         "Set a parameter of one input channel: 'setvalue N parameter values...' (N is 1-based; 0 sets all). "
-        "Parameters: speakerlabel position azimuth elevation distance bounds lfe packformat.",
+        "Parameters: speakerlabel cartesian position azimuth elevation distance x y z bounds lfe packformat "
+        "(with cartesian on, position is x y z and bounds XMin XMax YMin YMax ZMin ZMax, as Dolby Atmos masters give their beds).",
         MIN_FUNCTION {
             long index = 0;
             if (!parse_mc_index(args, m_channels.size(), index, [this](const std::string& m) { cerr << m << endl; })) {

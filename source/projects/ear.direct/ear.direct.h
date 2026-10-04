@@ -27,11 +27,13 @@ public:
     std::unique_ptr<ear::GainCalculatorDirectSpeakers> m_calc;
     ear::DirectSpeakersTypeMetadata m_metadata;
     ear::PolarSpeakerPosition m_position;
+    bool m_cartesian{ false };
+    ear::CartesianSpeakerPosition m_cartesian_position;
     std::vector<double> m_bounds;
     std::vector<float> m_gains;
     bool m_suppress_notify{ false };
 
-    inlet<> in_main{ this, "(list) azimuth elevation and optional distance; (speakerlabel) labels; (bang) recalculate" };
+    inlet<> in_main{ this, "(list) azimuth elevation and optional distance, or x y z when cartesian is on; (speakerlabel) labels; (bang) recalculate" };
     outlet<> out_gains{ this, "(list) gains, one per loudspeaker" };
     outlet<> out_info{ this, "(anything) channels, positions, layouts" };
 
@@ -88,6 +90,48 @@ public:
             return args;
         } } };
 
+    attribute<bool> cartesian{ this, "cartesian", false,
+        description{ "Give the nominal position in Cartesian coordinates (x y z in the ADM's cube, as Dolby Atmos masters "
+                     "give their bed channels) instead of azimuth, elevation and distance. Bounds are then "
+                     "XMin XMax YMin YMax ZMin ZMax; switching clears them." },
+        setter{ MIN_FUNCTION {
+            const bool flag = static_cast<bool>(args[0]);
+            if (flag != m_cartesian) {
+                m_bounds.clear();
+            }
+            m_cartesian = flag;
+            rebuild_position();
+            changed();
+            return args;
+        } } };
+
+    attribute<number> x{ this, "x", 0.0,
+        description{ "Cartesian X of the channel (-1 left to 1 right), used when cartesian is on." },
+        setter{ MIN_FUNCTION {
+            m_cartesian_position.X = static_cast<double>(args[0]);
+            rebuild_position();
+            changed();
+            return args;
+        } } };
+
+    attribute<number> y{ this, "y", 1.0,
+        description{ "Cartesian Y of the channel (-1 back to 1 front), used when cartesian is on." },
+        setter{ MIN_FUNCTION {
+            m_cartesian_position.Y = static_cast<double>(args[0]);
+            rebuild_position();
+            changed();
+            return args;
+        } } };
+
+    attribute<number> z{ this, "z", 0.0,
+        description{ "Cartesian Z of the channel (-1 floor to 1 ceiling), used when cartesian is on." },
+        setter{ MIN_FUNCTION {
+            m_cartesian_position.Z = static_cast<double>(args[0]);
+            rebuild_position();
+            changed();
+            return args;
+        } } };
+
     attribute<bool> lfe{ this, "lfe", false,
         description{ "Mark the channel as LFE (sets a 120 Hz low-pass frequency element), "
                      "so it is routed to an LFE loudspeaker only." },
@@ -131,10 +175,13 @@ public:
             return {};
         } };
 
-    message<> list{ this, "list", "Set the nominal position: azimuth elevation and optional distance.",
+    message<> list{ this, "list",
+        "Set the nominal position: azimuth elevation and optional distance, or x y z when cartesian is on.",
         MIN_FUNCTION {
-            if (args.size() < 2) {
-                cerr << "position needs at least 2 numbers: azimuth elevation [distance]" << endl;
+            if (args.size() < (m_cartesian ? 3u : 2u)) {
+                cerr << (m_cartesian ? "position needs 3 numbers: x y z (cartesian is on)"
+                                     : "position needs at least 2 numbers: azimuth elevation [distance]")
+                     << endl;
                 return {};
             }
             for (const auto& a : args) {
@@ -144,10 +191,17 @@ public:
                 }
             }
             m_suppress_notify = true;
-            azimuth = static_cast<double>(args[0]);
-            elevation = static_cast<double>(args[1]);
-            if (args.size() > 2) {
-                distance = static_cast<double>(args[2]);
+            if (m_cartesian) {
+                x = static_cast<double>(args[0]);
+                y = static_cast<double>(args[1]);
+                z = static_cast<double>(args[2]);
+            }
+            else {
+                azimuth = static_cast<double>(args[0]);
+                elevation = static_cast<double>(args[1]);
+                if (args.size() > 2) {
+                    distance = static_cast<double>(args[2]);
+                }
             }
             m_suppress_notify = false;
             changed();
@@ -167,7 +221,8 @@ public:
         } };
 
     message<> bounds{ this, "bounds",
-        "Set the position bounds: azimuthMin azimuthMax elevationMin elevationMax [distanceMin distanceMax]. "
+        "Set the position bounds: azimuthMin azimuthMax elevationMin elevationMax [distanceMin distanceMax], or "
+        "XMin XMax YMin YMax ZMin ZMax when cartesian is on. "
         "A loudspeaker within the bounds is used directly. Send without arguments to clear.",
         MIN_FUNCTION {
             if (args.empty()) {
@@ -176,7 +231,11 @@ public:
                 changed();
                 return {};
             }
-            if (args.size() != 4 && args.size() != 6) {
+            if (m_cartesian && args.size() != 6) {
+                cerr << "bounds needs 6 numbers: XMin XMax YMin YMax ZMin ZMax (cartesian is on)" << endl;
+                return {};
+            }
+            if (!m_cartesian && args.size() != 4 && args.size() != 6) {
                 cerr << "bounds needs 4 or 6 numbers: azimuthMin azimuthMax elevationMin elevationMax [distanceMin distanceMax]" << endl;
                 return {};
             }
@@ -273,6 +332,19 @@ public:
 
     void rebuild_position()
     {
+        if (m_cartesian) {
+            ear::CartesianSpeakerPosition cart(m_cartesian_position.X, m_cartesian_position.Y, m_cartesian_position.Z);
+            if (m_bounds.size() >= 6) {
+                cart.XMin = m_bounds[0];
+                cart.XMax = m_bounds[1];
+                cart.YMin = m_bounds[2];
+                cart.YMax = m_bounds[3];
+                cart.ZMin = m_bounds[4];
+                cart.ZMax = m_bounds[5];
+            }
+            m_metadata.position = cart;
+            return;
+        }
         ear::PolarSpeakerPosition position(m_position.azimuth, m_position.elevation, m_position.distance);
         if (m_bounds.size() >= 4) {
             position.azimuthMin = m_bounds[0];

@@ -81,7 +81,9 @@ interpolation time of the next changes of that object, until a negative
 value returns it to the attribute; `ear.adm` uses it to reproduce the
 interpolation of each ADM block.
 `mc.ear.direct~` accepts `speakerlabel`, `position`, `azimuth`, `elevation`,
-`distance`, `bounds`, `lfe` and `packformat`, plus `inputlayout <name>`, which
+`distance`, `bounds`, `lfe` and `packformat`, plus `cartesian` with `x`,
+`y`, `z` (then `position` is `x y z` and `bounds` are `XMin XMax YMin YMax
+ZMin ZMax`, as Dolby Atmos masters give their beds), and `inputlayout <name>`, which
 labels the input channels after a BS.2051 layout (LFE channels included), so
 rendering a 5.1 bed to 9+10+3 is `[mc.ear.direct~ 9+10+3]` with
 `inputlayout 0+5+0`.
@@ -218,9 +220,12 @@ outlet it belongs to: `direct setvalue 4 speakerlabel LFE1`,
 BS.2051 layout, exactly as `mc.ear.direct~`'s `inputlayout`), `direct name
 music`; `hoa order 1`, `hoa normalization N3D`, `hoa name ambience`. A bed
 whose channels name a common definitions layout (`inputlayout` sets the
-`packformat`, as does a file read by `ear.adm`) is written as a reference
-to that layout and its channels, as the EAR's own tools do; any other bed
-gets its own channel formats with the labels, positions and bounds given.
+`packformat`, as does a file read by `ear.adm`) and keeps its channels at
+their nominal positions, without bounds, is written as a reference to that
+layout and its channels, as the EAR's own tools do; any other bed (a label
+or position edited after `inputlayout`, bounds or Cartesian coordinates
+given) gets its own channel formats with the labels, positions and bounds
+given.
 A bed can change over time too: while `record` runs (or `mc.ear.record~`
 records), a change of a channel's labels, position or bounds becomes a
 timed `audioBlockFormat` at that moment, and such a bed is written with its
@@ -231,6 +236,23 @@ over its `ramp`); `lfe` and `packformat` are the channel's for the whole
 file. HOA blocks are static: order, degree and normalization do not change
 over time, and the timed HOA parameters (`nfcRefDist`, `screenRef`) are not
 implemented by libear.
+
+**Dolby Atmos masters.** A Dolby Atmos master ADM BWF (the Dolby Atmos
+Master ADM Profile) describes its bed with Dolby's own channel formats:
+labels `RC_L`, `RC_R`, `RC_C`, `RC_LFE`, `RC_Lss`, `RC_Rss`, `RC_Lrs`,
+`RC_Rrs`, `RC_Lts`, `RC_Rts` (`RC_Ls`, `RC_Rs` in 5.1) with Cartesian
+positions at the corners of the cube, and no frequency element for the
+LFE. On reading, these labels become the BS.2051 labels of the loudspeakers
+at those places (`M+030`, `M-030`, `M+000`, `LFE1`, `M+090`, `M-090`,
+`M+135`, `M-135`, `U+090`, `U-090`; `M+110`, `M-110`), so a layout that has
+the loudspeaker takes the channel directly and the LFE is known as such,
+and the Cartesian positions are passed on (`setvalue N cartesian 1`,
+`setvalue N position x y z`), so a layout without the loudspeaker places
+the channel by position as the EAR does; the profile's positions coincide
+with the EAR's allocentric positions of these loudspeakers. The objects of
+such a file (Cartesian positions, sampled blocks with 5 ms ramps, zones)
+go through the normal path. Playing a 128-track master wants
+`@chans 118` on `mc.ear.objects~`.
 Because `tracks` messages are ignored, the direct and hoa outlets of a
 reading `ear.adm` or `mc.ear.play~` can be fed straight into these messages
 through `[prepend direct]` and `[prepend hoa]` to copy a file's bed and
@@ -310,8 +332,8 @@ RF64, which `mc.ear.play~` plays and `mc.sfplay~` cannot.
 ```
 
 Limitations of this first version: muted objects, silent tracks, tracks missing
-from the `chna` chunk, cartesian DirectSpeakers positions and unsupported
-types are skipped with a warning on the info outlet; `audioObject`
+from the `chna` chunk and unsupported types are skipped with a warning on
+the info outlet; `audioObject`
 importance and complementary object groups are not interpreted (every
 object is rendered); nested objects use the innermost start and duration;
 when a file has several HOA scenes only the first is sent to the hoa
