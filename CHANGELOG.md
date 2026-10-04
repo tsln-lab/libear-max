@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.0](https://github.com/tsln-lab/libear-max/compare/v1.1.0...v1.2.0) (2026-10-04)
+
+
+### Features
+
+* check the ADM reader and writer against the EBU's test files ([#24](https://github.com/tsln-lab/libear-max/issues/24)) ([d1a4d4e](https://github.com/tsln-lab/libear-max/commit/d1a4d4ec917fdbc2b61a1710d2f223a1f9e836b1))
+* **corpus:** add Netflix's Dolby Atmos master excerpts to the corpus ([#27](https://github.com/tsln-lab/libear-max/issues/27)) ([3530223](https://github.com/tsln-lab/libear-max/commit/353022325ed788307bd056d1400052c14de8dd00))
+* **corpus:** list a file's chunks and summarise track renumbering ([#25](https://github.com/tsln-lab/libear-max/issues/25)) ([58b7064](https://github.com/tsln-lab/libear-max/commit/58b70648df1db9afd5cc8ccecc532ce1186351fb))
+* Dolby Atmos beds are read, with Cartesian DirectSpeakers positions ([#20](https://github.com/tsln-lab/libear-max/issues/20)) ([81983ac](https://github.com/tsln-lab/libear-max/commit/81983acec9e512e9248e6338a88fd2db92616ed8))
+* write Dolby Atmos masters with the profile attribute ([#21](https://github.com/tsln-lab/libear-max/issues/21)) ([e4180c5](https://github.com/tsln-lab/libear-max/commit/e4180c5ae6f6f0a1468c7b890adf4dd7102a7ae9))
+
 ## [1.1.0](https://github.com/tsln-lab/libear-max/compare/v1.0.0...v1.1.0) (2026-10-03)
 
 
