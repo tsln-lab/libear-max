@@ -42,7 +42,7 @@ export default defineConfig({
             { label: 'Dolby Atmos masters', slug: 'adm/dolby-atmos' },
             { label: 'mc.ear.play~', slug: 'adm/mc-ear-play' },
             { label: 'mc.ear.record~', slug: 'adm/mc-ear-record' },
-            { label: "The EBU's ADM test files", slug: 'adm/test-corpus' },
+            { label: 'The ADM test corpus', slug: 'adm/test-corpus' },
           ],
         },
         {

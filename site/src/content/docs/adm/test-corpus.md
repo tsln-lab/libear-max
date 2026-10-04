@@ -1,6 +1,6 @@
 ---
-title: Testing against the EBU's ADM test files
-description: The opt-in check that runs the reader, the calculators and the writer's round trip over the EBU's ADM test materials.
+title: Testing against the ADM test corpus
+description: The opt-in check that runs the reader, the calculators and the writer's round trip over the EBU's ADM test materials and Netflix's Dolby Atmos master excerpts.
 ---
 
 Beyond the unit tests, which only read files this package wrote itself, an
