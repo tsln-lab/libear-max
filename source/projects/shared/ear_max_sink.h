@@ -100,6 +100,7 @@ public:
         }
         m_channels = channels;
         m_samplerate = samplerate;
+        m_bitdepth = bitdepth;
         const size_t needed = k_ring_frames * channels;
         if (m_ring.size() != needed) {
             m_ring.assign(needed, 0.0f);    // allocated here, never on the audio thread
@@ -331,13 +332,14 @@ private:
             const double length = m_samplerate ? static_cast<double>(frames) / m_samplerate : 0.0;
             if (captured.channels() > 0) {
                 std::vector<bw64::AudioId> chna_ids;
-                auto doc = build_document(captured, length, chna_ids, result.warnings);
+                auto doc = build_document(captured, length, chna_ids, result.warnings, audio_format{ m_samplerate, m_bitdepth });
                 auto chna = std::make_shared<bw64::ChnaChunk>();
                 for (const auto& id : chna_ids) {
                     chna->addAudioId(id);
                 }
                 m_writer->setChnaChunk(chna);
                 m_writer->setAxmlChunk(std::make_shared<bw64::AxmlChunk>(to_xml(doc)));
+                m_writer->useRf64Id(captured.profile == adm_profile::dolby);    // the Dolby profile's id for a file of 4 GB or more
             }
             m_writer->close();
             result.frames = frames;
@@ -388,6 +390,7 @@ private:
     std::vector<float> m_ring;    ///< interleaved frames
     size_t m_channels{ 0 };
     uint32_t m_samplerate{ 48000 };
+    uint16_t m_bitdepth{ 24 };
     std::atomic<uint64_t> m_read_total{ 0 };
     std::atomic<uint64_t> m_write_total{ 0 };
     std::atomic<long> m_overruns{ 0 };

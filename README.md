@@ -236,6 +236,10 @@ over its `ramp`); `lfe` and `packformat` are the channel's for the whole
 file. HOA blocks are static: order, degree and normalization do not change
 over time, and the timed HOA parameters (`nfcRefDist`, `screenRef`) are not
 implemented by libear.
+Because `tracks` messages are ignored, the direct and hoa outlets of a
+reading `ear.adm` or `mc.ear.play~` can be fed straight into these messages
+through `[prepend direct]` and `[prepend hoa]` to copy a file's bed and
+scene.
 
 **Dolby Atmos masters.** A Dolby Atmos master ADM BWF (the Dolby Atmos
 Master ADM Profile) describes its bed with Dolby's own channel formats:
@@ -253,10 +257,33 @@ with the EAR's allocentric positions of these loudspeakers. The objects of
 such a file (Cartesian positions, sampled blocks with 5 ms ramps, zones)
 go through the normal path. Playing a 128-track master wants
 `@chans 118` on `mc.ear.objects~`.
-Because `tracks` messages are ignored, the direct and hoa outlets of a
-reading `ear.adm` or `mc.ear.play~` can be fed straight into these messages
-through `[prepend direct]` and `[prepend hoa]` to copy a file's bed and
-scene.
+
+**Writing a Dolby Atmos master.** `@profile dolby` on `ear.adm` and
+`mc.ear.record~` writes the file in the shape of the profile (`@profile
+ebu`, the default, is BS.2076 as libadm writes it). The bed gets Dolby's
+channel formats (`RoomCentricLeft`...), labels and Cartesian positions,
+chosen by its channels' labels (the BS.2051 labels `inputlayout` and a read
+file give, or Dolby's), and should be one of the profile's channel
+configurations in its order: 2.0, 3.0, 5.0, 5.1, 7.0, 7.1, 7.0.2 or 7.1.2
+(L R C LFE Lss Rss Lrs Rrs Lts Rts, Ls Rs for 5.x). The objects get
+Cartesian blocks (polar positions and extents converted as the EAR does,
+width, depth and height written equal, diffuse 0 or 1), `jumpPosition` 1
+with the profile's 5.208 ms interpolation (0 on the first block) and only
+the exclusion zones of the profile's vocabulary (`ZM1`, `ZM2L`/`ZM2R`,
+`ZM3L`/`ZM3Lss`/`ZM3R`/`ZM3Rss`, `ZM4`, `ZM5`, `ZB`, `ZT`, by label or
+bounds). The stream and track formats are named `PCM_` and the channel's
+name, the stream references both the channel and the pack, the track UIDs
+carry the sample rate and bit depth, the programme has its start and end,
+the content is `Atmos_Master_Content` with `dialogue 2`, the ids follow the
+profile (the bed is `AO_1001`, the objects start at `AO_100b`) and a file
+of 4 GB or more is marked `RF64`. What the profile has no place for is left
+out and reported (on the info outlet of `mc.ear.record~`, in the Max
+window for `ear.adm`): an HOA scene (its tracks are written without
+metadata), `objectDivergence`, `screenRef`, `screenEdgeLock`, the
+`channelLock` `maxDistance`, zones outside the vocabulary and timed changes
+of the bed; a sample rate other than 48 or 96 kHz or a bit depth other than
+24 is reported as well. The `dbmd` chunk the profile also asks for is not
+written yet.
 
 **Playing with one transport: `mc.ear.play~`.** `ear.adm` with `mc.sfplay~`
 runs two transports, Max's scheduler for the metadata and the audio for the

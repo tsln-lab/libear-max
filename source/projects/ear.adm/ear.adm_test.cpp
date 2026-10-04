@@ -1095,4 +1095,258 @@ SCENARIO("ear.adm writes a DirectSpeakers bed and an HOA scene after the objects
     }
 }
 
+SCENARIO("ear.adm writes a Dolby Atmos master") {
+    ext_main(nullptr);
+    const size_t npos = std::string::npos;
+
+    GIVEN("a programme captured with the Dolby profile: two objects, a 7.1.2 bed and a scene") {
+        admio::captured_programme captured;
+        captured.name = "Mix";
+        captured.profile = admio::adm_profile::dolby;
+
+        // a polar object with the profile's back zone, another zone, and
+        // things the profile has no place for
+        admio::captured_object voice;
+        voice.name = "voice";
+        admio::object_state s1;
+        s1.azimuth = 30.0;
+        s1.width = 20.0;
+        s1.height = 10.0;
+        s1.divergence = 0.5;
+        s1.diffuse = 0.3;
+        s1.screenref = true;
+        admio::exclusion_zone back;
+        back.cartesian = true;
+        back.bounds = { -1.0, 1.0, -1.0, -0.41934, -0.499, 0.499 };
+        admio::exclusion_zone other;
+        other.bounds = { -30.0, 30.0, -10.0, 10.0 };
+        s1.zones = { back, other };
+        voice.blocks.push_back({ 0.0, 0.0, s1 });
+        admio::object_state s1b = s1;
+        s1b.azimuth = -30.0;
+        voice.blocks.push_back({ 0.5, 0.01, s1b });
+
+        // a Cartesian object outside the cube, channel locked with a
+        // distance, with the top zone by its label
+        admio::captured_object fx;
+        fx.name = "fx";
+        admio::object_state s2;
+        s2.cartesian = true;
+        s2.x = 1.5;
+        s2.y = 0.5;
+        s2.channellock = true;
+        s2.channellock_distance = 1.0;
+        s2.gain = 0.5;
+        s2.diffuse = 1.0;
+        admio::exclusion_zone top;
+        top.cartesian = true;
+        top.bounds = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
+        top.label = "ZT";
+        s2.zones = { top };
+        fx.blocks.push_back({ 0.0, 0.0, s2 });
+        captured.objects = { voice, fx };
+
+        // the bed by the BS.2051 labels inputlayout and the reader give
+        const char* labels[] = { "M+030", "M-030", "M+000", "LFE1", "M+090", "M-090", "M+135", "M-135", "U+090", "U-090" };
+        captured.bed.name = "bed";
+        for (const char* label : labels) {
+            admio::captured_direct_channel ch;
+            ch.labels = { label };
+            ch.has_position = true;
+            ch.azimuth = 30.0;
+            ch.lfe = std::string(label) == "LFE1";
+            captured.bed.channels.push_back(ch);
+        }
+        captured.scene.order = 1;
+
+        std::vector<bw64::AudioId> chna_ids;
+        std::vector<std::string> warnings;
+        auto doc = admio::build_document(captured, 1.0, chna_ids, warnings, admio::audio_format{ 48000, 24 });
+        const std::string xml = admio::to_xml(doc);
+        INFO(xml);
+
+        THEN("the bed has the profile's channel formats, labels and positions and no frequency element") {
+            REQUIRE(xml.find("audioChannelFormatName=\"RoomCentricLeft\"") != npos);
+            REQUIRE(xml.find("audioChannelFormatName=\"RoomCentricRightTopSurround\"") != npos);
+            REQUIRE(xml.find("<speakerLabel>RC_Lts</speakerLabel>") != npos);
+            REQUIRE(xml.find("<cartesian>1</cartesian>") != npos);
+            REQUIRE(xml.find("coordinate=\"X\">-1.000000</position>") != npos);
+            REQUIRE(xml.find("lowPass") == npos);
+            REQUIRE(xml.find("audioStreamFormatName=\"PCM_RoomCentricLFE\"") != npos);
+            REQUIRE(xml.find("audioTrackFormatName=\"PCM_RoomCentricLFE\"") != npos);
+        }
+
+        THEN("the objects have Cartesian blocks with the fixed interpolation and the vocabulary's zones") {
+            REQUIRE(xml.find("audioStreamFormatName=\"PCM_voice\"") != npos);
+            REQUIRE(xml.find("interpolationLength=\"0.00000\"") != npos);
+            REQUIRE(xml.find("interpolationLength=\"0.005208\"") != npos);
+            REQUIRE(xml.find("objectDivergence") == npos);
+            REQUIRE(xml.find("<screenRef>1</screenRef>") == npos);
+            REQUIRE(xml.find("maxDistance") == npos);
+            REQUIRE(xml.find("<channelLock>1</channelLock>") != npos);
+            REQUIRE(xml.find("<diffuse>1.000000</diffuse>") != npos);
+            REQUIRE(xml.find("<diffuse>0") == npos);
+            REQUIRE(xml.find(">ZM1</zone>") != npos);
+            REQUIRE(xml.find("maxZ=\"1.000000\">ZT</zone>") != npos);
+            REQUIRE(xml.find("coordinate=\"azimuth\"") == npos);
+            REQUIRE(xml.find("coordinate=\"X\">1.000000</position>") != npos);    // clamped
+            REQUIRE(xml.find("<width>") != npos);
+            REQUIRE(xml.find("<depth>") != npos);
+        }
+
+        THEN("the names, references, timing and ids are the profile's") {
+            REQUIRE(xml.find("audioProgrammeID=\"APR_1001\"") != npos);
+            REQUIRE(xml.find("audioContentID=\"ACO_1001\"") != npos);
+            REQUIRE(xml.find("audioContentName=\"Atmos_Master_Content\"") != npos);
+            REQUIRE(xml.find("<dialogue mixedContentKind=\"0\">2</dialogue>") != npos);
+            REQUIRE(xml.find("audioObjectID=\"AO_1001\" audioObjectName=\"bed\"") != npos);
+            REQUIRE(xml.find("audioObjectID=\"AO_100b\" audioObjectName=\"voice\"") != npos);
+            REQUIRE(xml.find("audioObjectID=\"AO_100c\" audioObjectName=\"fx\"") != npos);
+            REQUIRE(xml.find("AC_0001100a") != npos);    // the bed's tenth channel
+            REQUIRE(xml.find("AB_0001100a_00000001") != npos);
+            REQUIRE(xml.find("AC_0003100b") != npos);    // the first object's channel
+            REQUIRE(xml.find("AB_0003100b_00000002") != npos);
+            REQUIRE(xml.find("AS_0003100c") != npos);
+            REQUIRE(xml.find("AT_0003100c_01") != npos);
+            REQUIRE(xml.find("AP_00011001") != npos);
+            REQUIRE(xml.find("AP_00031002") != npos);
+            REQUIRE(xml.find("AP_00031003") != npos);
+            REQUIRE(xml.find("ATU_0000000c") != npos);
+            REQUIRE(xml.find("ATU_0000000d") == npos);
+            REQUIRE(xml.find("sampleRate=\"48000\"") != npos);
+            REQUIRE(xml.find("bitDepth=\"24\"") != npos);
+            REQUIRE(xml.find("start=\"00:00:00.00000\"") != npos);
+            REQUIRE(xml.find("end=\"00:00:01.00000\"") != npos);
+            REQUIRE(xml.find("duration=\"00:00:01.00000\"") != npos);
+            REQUIRE(xml.find("typeDefinition=\"HOA\"") == npos);
+            // the stream references both the channel and the pack
+            const size_t stream = xml.find("<audioStreamFormat audioStreamFormatID=\"AS_0003100b\"");
+            REQUIRE(stream != npos);
+            const size_t stream_end = xml.find("</audioStreamFormat>", stream);
+            REQUIRE(xml.find("<audioChannelFormatIDRef>AC_0003100b</audioChannelFormatIDRef>", stream) < stream_end);
+            REQUIRE(xml.find("<audioPackFormatIDRef>AP_00031002</audioPackFormatIDRef>", stream) < stream_end);
+        }
+
+        THEN("the chna entries are the objects' then the bed's, with the profile's ids") {
+            REQUIRE(chna_ids.size() == 12);
+            REQUIRE(chna_ids[0].trackIndex() == 1);
+            REQUIRE(chna_ids[0].uid() == "ATU_0000000b");
+            REQUIRE(chna_ids[0].trackRef() == "AT_0003100b_01");
+            REQUIRE(chna_ids[0].packRef() == "AP_00031002");
+            REQUIRE(chna_ids[2].trackIndex() == 3);
+            REQUIRE(chna_ids[2].uid() == "ATU_00000001");
+            REQUIRE(chna_ids[2].packRef() == "AP_00011001");
+            REQUIRE(chna_ids[11].uid() == "ATU_0000000a");
+        }
+
+        THEN("what the profile cannot carry is reported") {
+            REQUIRE(warnings.size() == 3);
+            REQUIRE(contains(warnings, "scene 'scene': an HOA scene has no place in the Dolby profile; its tracks are written without metadata"));
+            std::string voice_warning, fx_warning;
+            for (const auto& w : warnings) {
+                if (w.rfind("object 'voice': ", 0) == 0) voice_warning = w;
+                if (w.rfind("object 'fx': ", 0) == 0) fx_warning = w;
+            }
+            REQUIRE(voice_warning.find("not in the Dolby profile, left out: ") != npos);
+            REQUIRE(voice_warning.find("objectDivergence") != npos);
+            REQUIRE(voice_warning.find("screenRef") != npos);
+            REQUIRE(voice_warning.find("diffuse rounded to 0 or 1") != npos);
+            REQUIRE(voice_warning.find("an exclusion zone that is not one of the profile's") != npos);
+            REQUIRE(voice_warning.find("width, height and depth differ") != npos);
+            REQUIRE(fx_warning.find("a position outside the cube was clamped to -1..1") != npos);
+            REQUIRE(fx_warning.find("the channelLock maxDistance") != npos);
+        }
+    }
+
+    GIVEN("a bed that is not one of the profile's configurations") {
+        admio::captured_programme captured;
+        captured.profile = admio::adm_profile::dolby;
+        const char* labels[] = { "M+030", "M-030", "M+110" };
+        for (const char* label : labels) {
+            admio::captured_direct_channel ch;
+            ch.labels = { label };
+            captured.bed.channels.push_back(ch);
+        }
+        admio::captured_direct_channel odd;
+        odd.labels = { "B+000" };
+        odd.has_position = true;
+        odd.azimuth = 0.0;
+        odd.elevation = -30.0;
+        captured.bed.channels.push_back(odd);
+        std::vector<bw64::AudioId> chna_ids;
+        std::vector<std::string> warnings;
+        auto doc = admio::build_document(captured, 1.0, chna_ids, warnings, admio::audio_format{ 44100, 16 });
+        const std::string xml = admio::to_xml(doc);
+        INFO(xml);
+
+        THEN("the known channels are written as the profile's, the other as captured, and the problems are reported") {
+            REQUIRE(xml.find("audioChannelFormatName=\"RoomCentricLeftSurround\"") != npos);
+            REQUIRE(xml.find("<speakerLabel>B+000</speakerLabel>") != npos);
+            REQUIRE(xml.find("audioChannelFormatName=\"bed B+000\"") != npos);
+            REQUIRE(contains(warnings, "the Dolby profile takes 48000 or 96000 Hz audio, not 44100"));
+            REQUIRE(contains(warnings, "the Dolby profile takes 24-bit audio, not 16"));
+            bool configuration = false, label = false;
+            for (const auto& w : warnings) {
+                if (w.find("L R Ls B+000 is not one of the profile's channel configurations") != npos) configuration = true;
+                if (w.find("channel 4 (B+000) is not one of the profile's bed channels") != npos) label = true;
+            }
+            REQUIRE(configuration);
+            REQUIRE(label);
+        }
+    }
+
+    GIVEN("an instance writing with the Dolby profile") {
+        test_wrapper<ear_adm> an_instance;
+        ear_adm& obj = an_instance;
+        obj.chans = 1;
+        obj.directchans = 2;
+        obj.hoa(atoms{ symbol("order"), -1 });
+        obj.profile = "dolby";
+        REQUIRE(obj.profile == symbol("dolby"));
+        obj.profile = "atmos";    // not a profile: kept
+        REQUIRE(obj.profile == symbol("dolby"));
+        obj.direct(atoms{ symbol("inputlayout"), symbol("0+2+0") });
+        obj.setvalue(atoms{ 1, symbol("azimuth"), 30.0 });
+
+        WHEN("the capture is written and read back") {
+            const std::string audio = write_audio("dolby_write_audio.wav", 3, 4800);
+            const std::string out = std::string(EARMAX_TEST_OUT_DIR) + "/dolby_write.wav";
+            std::remove(out.c_str());
+            obj.write(atoms{ symbol(out), symbol(audio) });
+            REQUIRE(contains(messages(obj, k_info), "written " + out + " 3 4800"));
+
+            test_wrapper<ear_adm> another_instance;
+            ear_adm& reader = another_instance;
+            reader.read(atoms{ symbol(out) });
+            REQUIRE(reader.loaded());
+
+            THEN("the file is a Dolby-shaped master that reads back as a bed at Dolby's positions and a Cartesian object") {
+                {
+                    std::ifstream file(out, std::ios::binary);
+                    char id[4] = { 0, 0, 0, 0 };
+                    file.read(id, 4);
+                    REQUIRE(std::string(id, 4) == "RIFF");    // RF64 only from 4 GB
+                }
+                const auto& items = reader.items();
+                REQUIRE(items.warnings.empty());
+                REQUIRE(items.direct.size() == 2);
+                REQUIRE(items.direct[0].labels == std::vector<std::string>{ "M+030" });
+                REQUIRE(items.direct[0].cartesian);
+                REQUIRE(items.direct[0].x == Approx(-1.0));
+                REQUIRE(items.direct[0].y == Approx(1.0));
+                REQUIRE(items.direct[0].z == Approx(0.0));
+                REQUIRE(items.direct[0].pack_id == "AP_00011001");
+                REQUIRE(items.direct[1].labels == std::vector<std::string>{ "M-030" });
+                REQUIRE(items.objects.size() == 1);
+                REQUIRE(items.objects[0].blocks.size() == 1);
+                REQUIRE(items.objects[0].blocks[0].state.cartesian);
+                REQUIRE(items.objects[0].blocks[0].state.x < 0.0);
+                REQUIRE(items.objects[0].blocks[0].state.y > 0.0);
+                REQUIRE(contains(messages(reader, k_direct), "setvalue 1 cartesian 1"));
+                REQUIRE(contains(messages(reader, k_direct), "setvalue 1 position -1 1 0"));
+            }
+        }
+    }
+}
+
 EARMAX_TEST_GENERATE_MAXREF(ear_adm, "ear.adm")

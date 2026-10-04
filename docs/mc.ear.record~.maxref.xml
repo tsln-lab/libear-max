@@ -98,6 +98,13 @@
 			<digest>Report the recording's length so far in milliseconds on the outlet</digest>
 			<description>Report the recording's length so far in milliseconds on the outlet.</description>
 		</method>
+		<method name='profile'>
+			<arglist>
+				<arg name='profile' optional='0' type='symbol' />
+			</arglist>
+			<digest>Set the profile attribute</digest>
+			<description>Set the <at>profile</at> attribute. Shape of the ADM recorded: 'ebu' (BS.2076 as libadm writes it) or 'dolby' (the Dolby Atmos Master ADM Profile: the bed with Dolby's channel formats, labels and Cartesian positions, the objects with Cartesian blocks, the profile's names, ids and timing; what the profile has no place for, such as an HOA scene, is left out with a warning).</description>
+		</method>
 		<method name='programmename'>
 			<arglist>
 				<arg name='programmename' optional='0' type='symbol' />
@@ -148,6 +155,10 @@
 		<attribute name='hoaorder' get='1' set='1' type='long' size='1'>
 			<digest>Ambisonic order of the HOA scene recorded on the (order+1)^2 input channels after the bed, in ACN order; -1 for no scene</digest>
 			<description>Ambisonic order of the HOA scene recorded on the (order+1)^2 input channels after the bed, in ACN order; -1 for no scene. Also set by 'hoa order N'. Takes effect at the next 'start'. Default: -1.</description>
+		</attribute>
+		<attribute name='profile' get='1' set='1' type='symbol' size='1'>
+			<digest>Shape of the ADM recorded: 'ebu' (BS.2076 as libadm writes it) or 'dolby' (the Dolby Atmos Master ADM Profile: the bed with Dolby's channel formats, labels and Cartesian positions, the objects with Cartesian blocks, the profile's names, ids and timing; what the profile has no place for, such as an HOA scene, is left out with a warning)</digest>
+			<description>Shape of the ADM recorded: 'ebu' (BS.2076 as libadm writes it) or 'dolby' (the Dolby Atmos Master ADM Profile: the bed with Dolby's channel formats, labels and Cartesian positions, the objects with Cartesian blocks, the profile's names, ids and timing; what the profile has no place for, such as an HOA scene, is left out with a warning). Default: ebu.</description>
 		</attribute>
 		<attribute name='programmename' get='1' set='1' type='symbol' size='1'>
 			<digest>Name of the audioProgramme written</digest>
