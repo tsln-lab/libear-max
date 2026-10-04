@@ -407,4 +407,56 @@ SCENARIO("mc.ear.record~ records a bed and a scene after the objects") {
     }
 }
 
+SCENARIO("mc.ear.record~ records a Dolby Atmos master") {
+    ext_main(nullptr);
+
+    GIVEN("an instance recording one object and a stereo bed with the Dolby profile") {
+        test_wrapper<mc_ear_record_tilde> an_instance;
+        mc_ear_record_tilde& obj = an_instance;
+        obj.chans = 1;
+        obj.directchans = 2;
+        obj.profile = "dolby";
+        REQUIRE(obj.profile == symbol("dolby"));
+        obj.direct(atoms{ symbol("inputlayout"), symbol("0+2+0") });
+        start_dsp(obj);
+        REQUIRE(obj.mc_input_changed(0, 3) == 0);
+
+        WHEN("three channels are recorded") {
+            const std::string path = out_path("recorded_dolby.wav");
+            obj.start(atoms{ symbol(path) });
+            mc_audio_io io(3, k_block);
+            obj(io.input(), io.output());
+            const auto info = finish(obj);
+
+            THEN("the file carries a Dolby-shaped ADM with the recording's sample rate and bit depth") {
+                REQUIRE(contains(info, "written " + path + " 3 1.33333"));
+                std::string xml;
+                {
+                    auto reader = bw64::readFile(path);
+                    REQUIRE(reader->axmlChunk());
+                    std::stringstream ss;
+                    reader->axmlChunk()->write(ss);
+                    xml = ss.str();
+                }
+                INFO(xml);
+                REQUIRE(xml.find("audioChannelFormatName=\"RoomCentricLeft\"") != std::string::npos);
+                REQUIRE(xml.find("<cartesian>1</cartesian>") != std::string::npos);
+                REQUIRE(xml.find("audioObjectID=\"AO_1001\" audioObjectName=\"bed\"") != std::string::npos);
+                REQUIRE(xml.find("audioObjectID=\"AO_100b\" audioObjectName=\"object 1\"") != std::string::npos);
+                REQUIRE(xml.find("sampleRate=\"48000\"") != std::string::npos);
+                REQUIRE(xml.find("bitDepth=\"24\"") != std::string::npos);
+                REQUIRE(xml.find("interpolationLength=\"0.00000\"") != std::string::npos);
+                const auto items = admio::select_items(admio::load_file(path));
+                REQUIRE(items.warnings.empty());
+                REQUIRE(items.direct.size() == 2);
+                REQUIRE(items.direct[0].labels == std::vector<std::string>{ "M+030" });
+                REQUIRE(items.direct[0].cartesian);
+                REQUIRE(items.direct[0].pack_id == "AP_00011001");
+                REQUIRE(items.objects.size() == 1);
+                REQUIRE(items.objects[0].blocks[0].state.cartesian);
+            }
+        }
+    }
+}
+
 EARMAX_TEST_GENERATE_MAXREF(mc_ear_record_tilde, "mc.ear.record~")
