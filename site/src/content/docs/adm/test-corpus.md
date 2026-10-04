@@ -5,16 +5,30 @@ description: The opt-in check that runs the reader, the calculators and the writ
 
 Beyond the unit tests, which only read files this package wrote itself, an
 opt-in check runs the ADM reader, the gain calculators and the writer's round
-trip over the EBU's ADM test materials: files made by other tools, with
-channel-based beds up to 22.2, objects over one or many tracks, several
-programmes, and the "kitchen sink" file that carries every BS.2076-1
-parameter. The files are the EBU's, published under
-[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) at
-<https://qc.ebu.io/testmaterials/?path=/ADM/>, and redistributed unmodified
-as the release assets of
-[tsln-lab/adm-test-corpus](https://github.com/tsln-lab/adm-test-corpus) so
-that this repository can fetch them from one place; they are not part of this
-repository (close to a gigabyte).
+trip over files made by other tools, fetched as the release assets of
+[tsln-lab/adm-test-corpus](https://github.com/tsln-lab/adm-test-corpus); they
+are not part of this repository (about three gigabytes). The corpus has two
+parts, and `source/corpus/assets.txt` names the release each file comes from:
+
+- **The EBU's ADM test materials** (release `v1.0.0`): channel-based beds
+  up to 22.2, objects over one or many tracks, several programmes, and the
+  "kitchen sink" file that carries every BS.2076-1 parameter. The files are
+  the EBU's, published at <https://qc.ebu.io/testmaterials/?path=/ADM/>,
+  and redistributed unmodified.
+- **Netflix's Dolby Atmos masters** (release `netflix-v1.0.0`): the first
+  60 seconds of the master ADM files of *Meridian*, *Nocturne* and
+  *Sol Levante*, from [Netflix Open Content](https://opencontent.netflix.com/)
+  under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), trimmed
+  with the corpus repository's `tools/trim_bw64.py` so that the ADM
+  metadata, the `chna` chunk and Dolby's `dbmd` chunk are the full master's.
+  They bring 58 to 92 tracks, up to 82 objects and 43,000 blocks per file,
+  Dolby's `RoomCentric` bed channel formats, several beds and contents per
+  programme, and a programme that starts at a timecode rather than zero.
+  Because their metadata runs past their audio, the round trip compares
+  block ends no further than the end of the audio.
+
+The licence and provenance of each part are in the corpus repository's
+`ATTRIBUTION.md`.
 
 ```sh
 tools/fetch_corpus.sh ~/adm-corpus              # downloads and verifies the files
