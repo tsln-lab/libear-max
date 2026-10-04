@@ -190,3 +190,30 @@ file: Two.Language.Programmes.ADM.Test.File.wav
   programme 2: render 4+5+0: 0 errors
   programme 2: roundtrip warning: bed 'GermanDialogue': the channels name different packformats; written with its own channel formats
   programme 2: roundtrip: 3 items on other tracks (the writer lays the programme's tracks out afresh: objects first, then the bed)
+
+file: meridian.wav
+  audio: 58 tracks 48000 Hz 24 bit 2880000 frames
+  chunks: fmt (16) data axml (12392337) chna (2324) dbmd (620)
+  programmes: 1
+  programme 1: 'Atmos_Master' objects 28 (31109 blocks) direct 30 hoa 0
+  programme 1: render 4+5+0: 0 errors
+  programme 1: roundtrip warning: bed 'dx Bed': packformat AP_00011001 is not a common definitions layout; written with its own channel formats
+  programme 1: roundtrip: 58 items on other tracks (the writer lays the programme's tracks out afresh: objects first, then the bed)
+
+file: nocturne.wav
+  audio: 71 tracks 48000 Hz 24 bit 2880000 frames
+  chunks: fmt (16) data axml (3537459) chna (2844) dbmd (358)
+  programmes: 1
+  programme 1: 'Atmos_Master' objects 51 (8484 blocks) direct 20 hoa 0
+  programme 1: render 4+5+0: 0 errors
+  programme 1: roundtrip warning: bed 'Music Bed': packformat AP_00011001 is not a common definitions layout; written with its own channel formats
+  programme 1: roundtrip: 71 items on other tracks (the writer lays the programme's tracks out afresh: objects first, then the bed)
+
+file: sollevante.wav
+  audio: 92 tracks 48000 Hz 24 bit 2880000 frames
+  chunks: JUNK (64) fmt (16) data axml (17514734) chna (3684) dbmd (688)
+  programmes: 1
+  programme 1: 'Atmos_Master' objects 82 (43219 blocks) direct 10 hoa 0
+  programme 1: render 4+5+0: 0 errors
+  programme 1: roundtrip warning: bed 'BED': packformat AP_00011001 is not a common definitions layout; written with its own channel formats
+  programme 1: roundtrip: 92 items on other tracks (the writer lays the programme's tracks out afresh: objects first, then the bed)

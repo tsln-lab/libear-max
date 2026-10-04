@@ -2,7 +2,7 @@ name: ADM corpus
 
 # The opt-in check against the EBU's ADM test files (see README "Testing
 # against the EBU's ADM test files"): weekly and on request, not on pull
-# requests, since the corpus is close to a gigabyte.
+# requests, since the corpus is about three gigabytes.
 on:
   workflow_dispatch:
   schedule:

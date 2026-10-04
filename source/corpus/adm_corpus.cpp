@@ -318,10 +318,14 @@ std::vector<std::string> compare(const admio::selection& a, const admio::selecti
     size_t renumbered = 0;    // items whose track moved: the writer lays the programme's tracks out afresh
     // a block that lasts to the end of its object (end = infinity when the
     // object has no duration) comes back lasting to the end of the file:
-    // the same span of audio
+    // the same span of audio. The same goes for metadata that runs past the
+    // audio (the Netflix excerpts keep the whole programme's blocks over
+    // their first minute): the writer stops at the end of the audio, so
+    // ends are compared no further than that, and the interpolation of a
+    // block that starts after the audio ends is not compared at all
     const auto same_end = [length](double x, double y) {
-        const double ex = std::isfinite(x) ? x : length;
-        const double ey = std::isfinite(y) ? y : length;
+        const double ex = std::min(std::isfinite(x) ? x : length, length);
+        const double ey = std::min(std::isfinite(y) ? y : length, length);
         return close(ex, ey, 1e-4);    // a sample or so
     };
     if (a.objects.size() != b.objects.size()) {
@@ -344,7 +348,7 @@ std::vector<std::string> compare(const admio::selection& a, const admio::selecti
             if (!same_end(x.blocks[k].end, y.blocks[k].end)) {
                 out.push_back(block + " end " + num(x.blocks[k].end) + " -> " + num(y.blocks[k].end));
             }
-            if (!close(x.blocks[k].interp, y.blocks[k].interp, 1e-4)) {
+            if (x.blocks[k].start < length && !close(x.blocks[k].interp, y.blocks[k].interp, 1e-4)) {
                 out.push_back(block + " interp " + num(x.blocks[k].interp) + " -> " + num(y.blocks[k].interp));
             }
             compare_state(block, x.blocks[k].state, y.blocks[k].state, out);
