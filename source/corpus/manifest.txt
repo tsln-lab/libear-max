@@ -88,7 +88,7 @@ file: Object-based.22.0.1.track.22.objects.wav
   programme 1: roundtrip: object 19 block 1 end 63 -> 72
   programme 1: roundtrip: object 20 block 1 end 66 -> 72
   programme 1: roundtrip: object 21 block 1 end 69 -> 72
-  programme 1: roundtrip: 21 items on other tracks (the writer puts the objects before the bed, one track each)
+  programme 1: roundtrip: 21 items on other tracks (the writer lays the programme's tracks out afresh: objects first, then the bed)
 
 file: Object-based.22.0.22.tracks.1.object.wav
   audio: 22 tracks 48000 Hz 24 bit 3456000 frames
@@ -135,7 +135,7 @@ file: Object-based.22.2.1.track.24.objects.wav
   programme 1: roundtrip: object 21 block 1 end 63 -> 72
   programme 1: roundtrip: object 22 block 1 end 66 -> 72
   programme 1: roundtrip: object 23 block 1 end 69 -> 72
-  programme 1: roundtrip: 23 items on other tracks (the writer puts the objects before the bed, one track each)
+  programme 1: roundtrip: 23 items on other tracks (the writer lays the programme's tracks out afresh: objects first, then the bed)
 
 file: Object-based.22.2.24.tracks.1.object.wav
   audio: 24 tracks 48000 Hz 24 bit 3456000 frames
@@ -185,8 +185,8 @@ file: Two.Language.Programmes.ADM.Test.File.wav
   programme 1: 'DocumentaryEnglish' objects 0 (0 blocks) direct 3 hoa 0
   programme 1: render 4+5+0: 0 errors
   programme 1: roundtrip warning: bed 'EnglishDialogue': the channels name different packformats; written with its own channel formats
-  programme 1: roundtrip: 2 items on other tracks (the writer puts the objects before the bed, one track each)
+  programme 1: roundtrip: 2 items on other tracks (the writer lays the programme's tracks out afresh: objects first, then the bed)
   programme 2: 'DocumentaryGerman' objects 0 (0 blocks) direct 3 hoa 0
   programme 2: render 4+5+0: 0 errors
   programme 2: roundtrip warning: bed 'GermanDialogue': the channels name different packformats; written with its own channel formats
-  programme 2: roundtrip: 3 items on other tracks (the writer puts the objects before the bed, one track each)
+  programme 2: roundtrip: 3 items on other tracks (the writer lays the programme's tracks out afresh: objects first, then the bed)

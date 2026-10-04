@@ -315,7 +315,7 @@ void compare_state(const std::string& where, const admio::object_state& a, const
 std::vector<std::string> compare(const admio::selection& a, const admio::selection& b, double length)
 {
     std::vector<std::string> out;
-    size_t renumbered = 0;    // items whose track moved (the writer puts the objects before the bed)
+    size_t renumbered = 0;    // items whose track moved: the writer lays the programme's tracks out afresh
     // a block that lasts to the end of its object (end = infinity when the
     // object has no duration) comes back lasting to the end of the file:
     // the same span of audio
@@ -390,7 +390,8 @@ std::vector<std::string> compare(const admio::selection& a, const admio::selecti
         if (a.hoa[i].tracks != b.hoa[i].tracks) out.push_back(where + " tracks differ");
     }
     if (renumbered) {
-        out.push_back(std::to_string(renumbered) + " items on other tracks (the writer puts the objects before the bed, one track each)");
+        out.push_back(std::to_string(renumbered)
+                      + " items on other tracks (the writer lays the programme's tracks out afresh: objects first, then the bed)");
     }
     return out;
 }
