@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.1.0](https://github.com/tsln-lab/libear-max/compare/v1.0.0...v1.1.0) (2026-10-03)
+
+
+### Features
+
+* add ear.hoa, the HOA decoding matrix at control rate ([#19](https://github.com/tsln-lab/libear-max/issues/19)) ([8429608](https://github.com/tsln-lab/libear-max/commit/842960846edcd7de7537400768f90677eee7755b))
+* add mc.ear.encode~, an ambisonic encoder with the mc.ear.objects~ interface ([#10](https://github.com/tsln-lab/libear-max/issues/10)) ([f54e191](https://github.com/tsln-lab/libear-max/commit/f54e1917903c901dce47a8a0b97116fdd46f9b19))
+* DirectSpeakers beds and HOA scenes are written by ear.adm and mc.ear.record~ ([#15](https://github.com/tsln-lab/libear-max/issues/15)) ([5e01350](https://github.com/tsln-lab/libear-max/commit/5e01350ff224163092f183bfb1723c73fef5eafb))
+* ear.adm reads and writes ADM files, mc.ear.select~ routes file tracks ([#12](https://github.com/tsln-lab/libear-max/issues/12)) ([f54e191](https://github.com/tsln-lab/libear-max/commit/f54e1917903c901dce47a8a0b97116fdd46f9b19))
+* mc.ear.play~ converts a file at another sample rate to the audio's ([#16](https://github.com/tsln-lab/libear-max/issues/16)) ([69c99dd](https://github.com/tsln-lab/libear-max/commit/69c99ddb214a0e7cab34cccae6bcc41491cd9828))
+* mc.ear.play~ plays an ADM file, audio and metadata together ([#13](https://github.com/tsln-lab/libear-max/issues/13)) ([f54e191](https://github.com/tsln-lab/libear-max/commit/f54e1917903c901dce47a8a0b97116fdd46f9b19))
+* mc.ear.record~ records an ADM file, audio and metadata together ([#14](https://github.com/tsln-lab/libear-max/issues/14)) ([460b5f6](https://github.com/tsln-lab/libear-max/commit/460b5f632bb7a7f5ae2060a774a684fd8858d55a))
+* timed DirectSpeakers blocks are read, played and captured ([f54e191](https://github.com/tsln-lab/libear-max/commit/f54e1917903c901dce47a8a0b97116fdd46f9b19))
+* zone exclusion is read from, played from and written to ADM files ([#18](https://github.com/tsln-lab/libear-max/issues/18)) ([98e1402](https://github.com/tsln-lab/libear-max/commit/98e14029ae7837c37f195b984b9a6392c2cab714))
+
 ## 1.0.0 (2026-10-02)
 
 
