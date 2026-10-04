@@ -4,6 +4,7 @@
 
 file: Channel-based.22.2.wav
   audio: 24 tracks 48000 Hz 24 bit 3456000 frames
+  chunks: JUNK (28) fmt (16) data chna (964) axml (4328)
   programmes: 0
   programme 1: '(none)' objects 0 (0 blocks) direct 24 hoa 0
   programme 1: render 4+5+0: 0 errors
@@ -11,6 +12,7 @@ file: Channel-based.22.2.wav
 
 file: Channel-based.5.1.4.wav
   audio: 10 tracks 48000 Hz 24 bit 1440000 frames
+  chunks: JUNK (28) fmt (16) data chna (404) axml (2414)
   programmes: 0
   programme 1: '(none)' objects 0 (0 blocks) direct 10 hoa 0
   programme 1: render 4+5+0: 0 errors
@@ -18,6 +20,7 @@ file: Channel-based.5.1.4.wav
 
 file: Channel-based.5.1.wav
   audio: 6 tracks 48000 Hz 24 bit 864000 frames
+  chunks: JUNK (28) fmt (16) data chna (244) axml (1862)
   programmes: 0
   programme 1: '(none)' objects 0 (0 blocks) direct 6 hoa 0
   programme 1: render 4+5+0: 0 errors
@@ -25,6 +28,7 @@ file: Channel-based.5.1.wav
 
 file: Channel-based.7.1.4.wav
   audio: 12 tracks 48000 Hz 24 bit 1728000 frames
+  chunks: JUNK (28) fmt (16) data chna (484) axml (2688)
   programmes: 0
   programme 1: '(none)' objects 0 (0 blocks) direct 12 hoa 0
   programme 1: render 4+5+0: 0 errors
@@ -32,6 +36,7 @@ file: Channel-based.7.1.4.wav
 
 file: Channel-based.mono.wav
   audio: 1 tracks 48000 Hz 24 bit 144000 frames
+  chunks: JUNK (28) fmt (16) data chna (44) axml (1168)
   programmes: 0
   programme 1: '(none)' objects 0 (0 blocks) direct 1 hoa 0
   programme 1: render 4+5+0: 0 errors
@@ -39,6 +44,7 @@ file: Channel-based.mono.wav
 
 file: Channel-based.stereo.wav
   audio: 2 tracks 48000 Hz 24 bit 288000 frames
+  chunks: JUNK (28) fmt (16) data chna (84) axml (1318)
   programmes: 0
   programme 1: '(none)' objects 0 (0 blocks) direct 2 hoa 0
   programme 1: render 4+5+0: 0 errors
@@ -49,6 +55,7 @@ file: Kitchen.Sink.contains.all.ADM.parameters.wav
 
 file: Object-based.22.0.1.track.1.object.wav
   audio: 1 tracks 48000 Hz 24 bit 3456000 frames
+  chunks: JUNK (28) fmt (16) data chna (44) axml (11582)
   programmes: 0
   programme 1: '(none)' objects 1 (24 blocks) direct 0 hoa 0
   programme 1: render 4+5+0: 0 errors
@@ -56,54 +63,36 @@ file: Object-based.22.0.1.track.1.object.wav
 
 file: Object-based.22.0.1.track.22.objects.wav
   audio: 1 tracks 48000 Hz 24 bit 3456000 frames
+  chunks: JUNK (28) fmt (16) data chna (884) axml (36478)
   programmes: 0
   programme 1: '(none)' objects 22 (22 blocks) direct 0 hoa 0
   programme 1: render 4+5+0: 0 errors
   programme 1: roundtrip: object 1 block 1 end 3 -> 72
-  programme 1: roundtrip: object 2 track 0 -> 1
   programme 1: roundtrip: object 2 block 1 end 6 -> 72
-  programme 1: roundtrip: object 3 track 0 -> 2
   programme 1: roundtrip: object 3 block 1 end 9 -> 72
-  programme 1: roundtrip: object 4 track 0 -> 3
   programme 1: roundtrip: object 4 block 1 end 15 -> 72
-  programme 1: roundtrip: object 5 track 0 -> 4
   programme 1: roundtrip: object 5 block 1 end 18 -> 72
-  programme 1: roundtrip: object 6 track 0 -> 5
   programme 1: roundtrip: object 6 block 1 end 21 -> 72
-  programme 1: roundtrip: object 7 track 0 -> 6
   programme 1: roundtrip: object 7 block 1 end 24 -> 72
-  programme 1: roundtrip: object 8 track 0 -> 7
   programme 1: roundtrip: object 8 block 1 end 27 -> 72
-  programme 1: roundtrip: object 9 track 0 -> 8
   programme 1: roundtrip: object 9 block 1 end 33 -> 72
-  programme 1: roundtrip: object 10 track 0 -> 9
   programme 1: roundtrip: object 10 block 1 end 36 -> 72
-  programme 1: roundtrip: object 11 track 0 -> 10
   programme 1: roundtrip: object 11 block 1 end 39 -> 72
-  programme 1: roundtrip: object 12 track 0 -> 11
   programme 1: roundtrip: object 12 block 1 end 42 -> 72
-  programme 1: roundtrip: object 13 track 0 -> 12
   programme 1: roundtrip: object 13 block 1 end 45 -> 72
-  programme 1: roundtrip: object 14 track 0 -> 13
   programme 1: roundtrip: object 14 block 1 end 48 -> 72
-  programme 1: roundtrip: object 15 track 0 -> 14
   programme 1: roundtrip: object 15 block 1 end 51 -> 72
-  programme 1: roundtrip: object 16 track 0 -> 15
   programme 1: roundtrip: object 16 block 1 end 54 -> 72
-  programme 1: roundtrip: object 17 track 0 -> 16
   programme 1: roundtrip: object 17 block 1 end 57 -> 72
-  programme 1: roundtrip: object 18 track 0 -> 17
   programme 1: roundtrip: object 18 block 1 end 60 -> 72
-  programme 1: roundtrip: object 19 track 0 -> 18
   programme 1: roundtrip: object 19 block 1 end 63 -> 72
-  programme 1: roundtrip: object 20 track 0 -> 19
   programme 1: roundtrip: object 20 block 1 end 66 -> 72
-  programme 1: roundtrip: object 21 track 0 -> 20
   programme 1: roundtrip: object 21 block 1 end 69 -> 72
-  programme 1: roundtrip: object 22 track 0 -> 21
+  programme 1: roundtrip: 21 items on other tracks (the writer lays the programme's tracks out afresh: objects first, then the bed)
 
 file: Object-based.22.0.22.tracks.1.object.wav
   audio: 22 tracks 48000 Hz 24 bit 3456000 frames
+  chunks: JUNK (28) fmt (16) data chna (884) axml (28528)
   programmes: 0
   programme 1: '(none)' objects 22 (22 blocks) direct 0 hoa 0
   programme 1: render 4+5+0: 0 errors
@@ -111,6 +100,7 @@ file: Object-based.22.0.22.tracks.1.object.wav
 
 file: Object-based.22.2.1.track.1.object.wav
   audio: 1 tracks 48000 Hz 24 bit 3456000 frames
+  chunks: JUNK (28) fmt (16) data chna (44) axml (11390)
   programmes: 0
   programme 1: '(none)' objects 1 (24 blocks) direct 0 hoa 0
   programme 1: render 4+5+0: 0 errors
@@ -118,58 +108,38 @@ file: Object-based.22.2.1.track.1.object.wav
 
 file: Object-based.22.2.1.track.24.objects.wav
   audio: 1 tracks 48000 Hz 24 bit 3456000 frames
+  chunks: JUNK (28) fmt (16) data chna (964) axml (39720)
   programmes: 0
   programme 1: '(none)' objects 24 (24 blocks) direct 0 hoa 0
   programme 1: render 4+5+0: 0 errors
   programme 1: roundtrip: object 1 block 1 end 3 -> 72
-  programme 1: roundtrip: object 2 track 0 -> 1
   programme 1: roundtrip: object 2 block 1 end 6 -> 72
-  programme 1: roundtrip: object 3 track 0 -> 2
   programme 1: roundtrip: object 3 block 1 end 9 -> 72
-  programme 1: roundtrip: object 4 track 0 -> 3
   programme 1: roundtrip: object 4 block 1 end 12 -> 72
-  programme 1: roundtrip: object 5 track 0 -> 4
   programme 1: roundtrip: object 5 block 1 end 15 -> 72
-  programme 1: roundtrip: object 6 track 0 -> 5
   programme 1: roundtrip: object 6 block 1 end 18 -> 72
-  programme 1: roundtrip: object 7 track 0 -> 6
   programme 1: roundtrip: object 7 block 1 end 21 -> 72
-  programme 1: roundtrip: object 8 track 0 -> 7
   programme 1: roundtrip: object 8 block 1 end 24 -> 72
-  programme 1: roundtrip: object 9 track 0 -> 8
   programme 1: roundtrip: object 9 block 1 end 27 -> 72
-  programme 1: roundtrip: object 10 track 0 -> 9
   programme 1: roundtrip: object 10 block 1 end 30 -> 72
-  programme 1: roundtrip: object 11 track 0 -> 10
   programme 1: roundtrip: object 11 block 1 end 33 -> 72
-  programme 1: roundtrip: object 12 track 0 -> 11
   programme 1: roundtrip: object 12 block 1 end 36 -> 72
-  programme 1: roundtrip: object 13 track 0 -> 12
   programme 1: roundtrip: object 13 block 1 end 39 -> 72
-  programme 1: roundtrip: object 14 track 0 -> 13
   programme 1: roundtrip: object 14 block 1 end 42 -> 72
-  programme 1: roundtrip: object 15 track 0 -> 14
   programme 1: roundtrip: object 15 block 1 end 45 -> 72
-  programme 1: roundtrip: object 16 track 0 -> 15
   programme 1: roundtrip: object 16 block 1 end 48 -> 72
-  programme 1: roundtrip: object 17 track 0 -> 16
   programme 1: roundtrip: object 17 block 1 end 51 -> 72
-  programme 1: roundtrip: object 18 track 0 -> 17
   programme 1: roundtrip: object 18 block 1 end 54 -> 72
-  programme 1: roundtrip: object 19 track 0 -> 18
   programme 1: roundtrip: object 19 block 1 end 57 -> 72
-  programme 1: roundtrip: object 20 track 0 -> 19
   programme 1: roundtrip: object 20 block 1 end 60 -> 72
-  programme 1: roundtrip: object 21 track 0 -> 20
   programme 1: roundtrip: object 21 block 1 end 63 -> 72
-  programme 1: roundtrip: object 22 track 0 -> 21
   programme 1: roundtrip: object 22 block 1 end 66 -> 72
-  programme 1: roundtrip: object 23 track 0 -> 22
   programme 1: roundtrip: object 23 block 1 end 69 -> 72
-  programme 1: roundtrip: object 24 track 0 -> 23
+  programme 1: roundtrip: 23 items on other tracks (the writer lays the programme's tracks out afresh: objects first, then the bed)
 
 file: Object-based.22.2.24.tracks.1.object.wav
   audio: 24 tracks 48000 Hz 24 bit 3456000 frames
+  chunks: JUNK (28) fmt (16) data chna (964) axml (30968)
   programmes: 0
   programme 1: '(none)' objects 24 (24 blocks) direct 0 hoa 0
   programme 1: render 4+5+0: 0 errors
@@ -177,6 +147,7 @@ file: Object-based.22.2.24.tracks.1.object.wav
 
 file: Panned.Noise.wav
   audio: 1 tracks 48000 Hz 24 bit 576000 frames
+  chunks: JUNK (28) fmt (16) data chna (44) axml (11516)
   programmes: 1
   programme 1: 'PanningNoise' objects 1 (24 blocks) direct 0 hoa 0
   programme 1: render 4+5+0: 0 errors
@@ -184,6 +155,7 @@ file: Panned.Noise.wav
 
 file: Panning.Engine.Noise.in.Cartesian.Coordinates.wav
   audio: 1 tracks 48000 Hz 24 bit 480001 frames
+  chunks: JUNK (28) fmt (16) data chna (44) axml (3438)
   programmes: 1
   programme 1: 'PanningEngineCartesian' objects 1 (5 blocks) direct 0 hoa 0
   programme 1: render 4+5+0: 0 errors
@@ -191,6 +163,7 @@ file: Panning.Engine.Noise.in.Cartesian.Coordinates.wav
 
 file: Panning.Engine.Noise.in.Polar.Coordinates.wav
   audio: 1 tracks 48000 Hz 24 bit 480001 frames
+  chunks: JUNK (28) fmt (16) data chna (44) axml (3532)
   programmes: 1
   programme 1: 'PanningEnginePolar' objects 1 (5 blocks) direct 0 hoa 0
   programme 1: render 4+5+0: 0 errors
@@ -198,6 +171,7 @@ file: Panning.Engine.Noise.in.Polar.Coordinates.wav
 
 file: Two.Language.Interactive.Programme.ADM.Test.File.wav
   audio: 4 tracks 48000 Hz 24 bit 384008 frames
+  chunks: JUNK (28) fmt (16) data chna (164) axml (2528)
   programmes: 1
   programme 1: 'Documentary' objects 0 (0 blocks) direct 4 hoa 0
   programme 1: render 4+5+0: 0 errors
@@ -206,15 +180,13 @@ file: Two.Language.Interactive.Programme.ADM.Test.File.wav
 
 file: Two.Language.Programmes.ADM.Test.File.wav
   audio: 4 tracks 48000 Hz 24 bit 384008 frames
+  chunks: JUNK (28) fmt (16) data chna (164) axml (2596)
   programmes: 2
   programme 1: 'DocumentaryEnglish' objects 0 (0 blocks) direct 3 hoa 0
   programme 1: render 4+5+0: 0 errors
   programme 1: roundtrip warning: bed 'EnglishDialogue': the channels name different packformats; written with its own channel formats
-  programme 1: roundtrip: direct 2 track 2 -> 1
-  programme 1: roundtrip: direct 3 track 3 -> 2
+  programme 1: roundtrip: 2 items on other tracks (the writer lays the programme's tracks out afresh: objects first, then the bed)
   programme 2: 'DocumentaryGerman' objects 0 (0 blocks) direct 3 hoa 0
   programme 2: render 4+5+0: 0 errors
   programme 2: roundtrip warning: bed 'GermanDialogue': the channels name different packformats; written with its own channel formats
-  programme 2: roundtrip: direct 1 track 1 -> 0
-  programme 2: roundtrip: direct 2 track 2 -> 1
-  programme 2: roundtrip: direct 3 track 3 -> 2
+  programme 2: roundtrip: 3 items on other tracks (the writer lays the programme's tracks out afresh: objects first, then the bed)
