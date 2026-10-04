@@ -1,0 +1,35 @@
+name: ADM corpus
+
+# The opt-in check against the EBU's ADM test files (see README "Testing
+# against the EBU's ADM test files"): weekly and on request, not on pull
+# requests, since the corpus is close to a gigabyte.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 6 * * 1'
+
+jobs:
+  corpus:
+    name: EBU ADM test files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y libboost-dev ninja-build
+      - name: Restore the corpus
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ~/adm-corpus
+          key: adm-corpus-${{ hashFiles('source/corpus/assets.txt') }}
+      - name: Fetch the corpus
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: tools/fetch_corpus.sh ~/adm-corpus
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - name: Build the checker
+        run: cmake --build build --parallel --target adm_corpus
+      - name: Check the corpus against the manifest
+        run: tests/adm_corpus --check source/corpus/manifest.txt ~/adm-corpus

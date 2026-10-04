@@ -1349,4 +1349,121 @@ SCENARIO("ear.adm writes a Dolby Atmos master") {
     }
 }
 
+namespace {
+
+/// A BW64 file with the given ADM XML and chna entries and silent audio, as
+/// the EBU's test files are shaped: the audioTrackUIDs reference nothing in
+/// the XML, the chna chunk names their track and pack formats.
+std::string write_described_by_chna(const std::string& name, const std::string& xml, const std::vector<bw64::AudioId>& ids,
+                                    uint16_t channels)
+{
+    const std::string path = std::string(EARMAX_TEST_OUT_DIR) + "/" + name;
+    std::remove(path.c_str());
+    auto chna = std::make_shared<bw64::ChnaChunk>();
+    for (const auto& id : ids) {
+        chna->addAudioId(id);
+    }
+    auto axml = std::make_shared<bw64::AxmlChunk>(xml);
+    auto writer = bw64::writeFile(path, channels, 48000, 24, chna, axml);
+    std::vector<float> silence(4800 * channels, 0.0f);
+    writer->write(silence.data(), 4800);
+    writer->close();
+    return path;
+}
+
+const char* k_chna_described_xml = R"(<?xml version="1.0" encoding="UTF-8"?>
+<ebuCoreMain xmlns="urn:ebu:metadata-schema:ebuCore" xml:lang="en">
+  <coreMetadata>
+    <format>
+      <audioFormatExtended>
+        <audioProgramme audioProgrammeID="APR_1001" audioProgrammeName="Described">
+          <audioContentIDRef>ACO_1001</audioContentIDRef>
+        </audioProgramme>
+        <audioContent audioContentID="ACO_1001" audioContentName="Described">
+          <audioObjectIDRef>AO_1001</audioObjectIDRef>
+          <audioObjectIDRef>AO_1002</audioObjectIDRef>
+        </audioContent>
+        <audioObject audioObjectID="AO_1001" audioObjectName="Stereo">
+          <audioPackFormatIDRef>AP_00010002</audioPackFormatIDRef>
+          <audioTrackUIDRef>ATU_00000001</audioTrackUIDRef>
+          <audioTrackUIDRef>ATU_00000002</audioTrackUIDRef>
+        </audioObject>
+        <audioObject audioObjectID="AO_1002" audioObjectName="Noise">
+          <audioPackFormatIDRef>AP_00031001</audioPackFormatIDRef>
+          <audioTrackUIDRef>ATU_00000003</audioTrackUIDRef>
+        </audioObject>
+        <audioPackFormat audioPackFormatID="AP_00031001" audioPackFormatName="Noise" typeLabel="0003" typeDefinition="Objects">
+          <audioChannelFormatIDRef>AC_00031001</audioChannelFormatIDRef>
+        </audioPackFormat>
+        <audioChannelFormat audioChannelFormatID="AC_00031001" audioChannelFormatName="Noise" typeLabel="0003" typeDefinition="Objects">
+          <audioBlockFormat audioBlockFormatID="AB_00031001_00000001">
+            <position coordinate="azimuth">45.00</position>
+            <position coordinate="elevation">0.00</position>
+            <position coordinate="distance">1.00</position>
+          </audioBlockFormat>
+        </audioChannelFormat>
+        <audioTrackUID UID="ATU_00000001" sampleRate="48000" bitDepth="24"/>
+        <audioTrackUID UID="ATU_00000002" sampleRate="48000" bitDepth="24"/>
+        <audioTrackUID UID="ATU_00000003" sampleRate="48000" bitDepth="24"/>
+      </audioFormatExtended>
+    </format>
+  </coreMetadata>
+</ebuCoreMain>
+)";
+
+} // namespace
+
+SCENARIO("ear.adm reads files whose tracks are described by the chna chunk only") {
+    ext_main(nullptr);
+
+    GIVEN("a file whose audioTrackUIDs reference nothing, with the formats in the chna chunk, as the EBU's test files") {
+        const std::string path = write_described_by_chna("chna_described.wav", k_chna_described_xml,
+                                                         { bw64::AudioId(1, "ATU_00000001", "AT_00010001_01", "AP_00010002"),
+                                                           bw64::AudioId(2, "ATU_00000002", "AT_00010002_01", "AP_00010002"),
+                                                           bw64::AudioId(3, "ATU_00000003", "AT_00031001_01", "AP_00031001") },
+                                                         3);
+        test_wrapper<ear_adm> an_instance;
+        ear_adm& obj = an_instance;
+        obj.read(atoms{ symbol(path) });
+        REQUIRE(obj.loaded());
+
+        THEN("the bed's channels come from the chna's track formats and the object's from its pack") {
+            const auto& items = obj.items();
+            REQUIRE(items.warnings.empty());
+            REQUIRE(items.direct.size() == 2);
+            REQUIRE(items.direct[0].track == 0);
+            REQUIRE(items.direct[0].labels == std::vector<std::string>{ "urn:itu:bs:2051:0:speaker:M+030" });
+            REQUIRE(items.direct[0].pack_id == "AP_00010002");
+            REQUIRE(items.direct[1].track == 1);
+            REQUIRE(items.direct[1].labels == std::vector<std::string>{ "urn:itu:bs:2051:0:speaker:M-030" });
+            REQUIRE(items.objects.size() == 1);
+            REQUIRE(items.objects[0].track == 2);
+            REQUIRE(items.objects[0].blocks.size() == 1);
+            REQUIRE(items.objects[0].blocks[0].state.azimuth == Approx(45.0));
+        }
+    }
+
+    GIVEN("the same file with a chna chunk that names no formats") {
+        const std::string path = write_described_by_chna("chna_bare.wav", k_chna_described_xml,
+                                                         { bw64::AudioId(1, "ATU_00000001", "", ""),
+                                                           bw64::AudioId(2, "ATU_00000002", "", ""),
+                                                           bw64::AudioId(3, "ATU_00000003", "", "") },
+                                                         3);
+        test_wrapper<ear_adm> an_instance;
+        ear_adm& obj = an_instance;
+        obj.read(atoms{ symbol(path) });
+        REQUIRE(obj.loaded());
+
+        THEN("the UIDs stand for the channels of the objects' packs in order") {
+            const auto& items = obj.items();
+            REQUIRE(items.warnings.empty());
+            REQUIRE(items.direct.size() == 2);
+            REQUIRE(items.direct[0].labels == std::vector<std::string>{ "urn:itu:bs:2051:0:speaker:M+030" });
+            REQUIRE(items.direct[1].labels == std::vector<std::string>{ "urn:itu:bs:2051:0:speaker:M-030" });
+            REQUIRE(items.objects.size() == 1);
+            REQUIRE(items.objects[0].blocks[0].state.azimuth == Approx(45.0));
+        }
+    }
+}
+
 EARMAX_TEST_GENERATE_MAXREF(ear_adm, "ear.adm")

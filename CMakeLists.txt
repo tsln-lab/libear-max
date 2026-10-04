@@ -98,3 +98,9 @@ foreach (project_dir ${PROJECT_DIRS})
         add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/source/projects/${project_dir})
     endif ()
 endforeach ()
+
+#############################################################
+# The ADM corpus checker (opt-in test against the EBU's test files)
+#############################################################
+
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/source/corpus)

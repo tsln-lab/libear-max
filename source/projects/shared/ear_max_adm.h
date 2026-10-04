@@ -377,13 +377,48 @@ inline loaded_file load_file(const std::string& path)
     if (!chna) {
         throw std::runtime_error("the file has no chna chunk (no track to audioTrackUID mapping)");
     }
-    for (const auto& id : chna->audioIds()) {
-        std::string uid = id.uid();
-        while (!uid.empty() && (uid.back() == '\0' || uid.back() == ' ')) {
-            uid.pop_back();
+    const auto trimmed = [](std::string s) {
+        while (!s.empty() && (s.back() == '\0' || s.back() == ' ')) {
+            s.pop_back();
         }
+        return s;
+    };
+    for (const auto& id : chna->audioIds()) {
+        const std::string uid = trimmed(id.uid());
         if (id.trackIndex() > 0) {
             result.track_of_uid[upper(uid)] = static_cast<int>(id.trackIndex()) - 1;
+        }
+        // an audioTrackUID that references no track or pack format in the
+        // XML takes them from its chna entry, as the EAR does (BS.2076-1
+        // era files, the EBU's test files among them, describe the tracks
+        // there only)
+        std::shared_ptr<adm::AudioTrackUid> element;
+        try {
+            element = result.document->lookup(adm::parseAudioTrackUidId(uid));
+        }
+        catch (const std::exception&) {
+            continue;
+        }
+        if (!element) {
+            continue;
+        }
+        if (!element->getReference<adm::AudioTrackFormat>() && !element->getReference<adm::AudioChannelFormat>()) {
+            try {
+                if (auto track = result.document->lookup(adm::parseAudioTrackFormatId(trimmed(id.trackRef())))) {
+                    element->setReference(track);
+                }
+            }
+            catch (const std::exception&) {
+            }
+        }
+        if (!element->getReference<adm::AudioPackFormat>()) {
+            try {
+                if (auto pack = result.document->lookup(adm::parseAudioPackFormatId(trimmed(id.packRef())))) {
+                    element->setReference(pack);
+                }
+            }
+            catch (const std::exception&) {
+            }
         }
     }
     return result;
@@ -586,7 +621,15 @@ inline selection select_items(const loaded_file& file, int programme_index = -1)
         std::vector<std::pair<int, int>> hoa_acn;    // (acn, track)
         std::shared_ptr<const adm::AudioPackFormat> hoa_pack;
 
+        // a track UID that names no channel format (BS.2076-1 era files,
+        // the EBU's test files among them) stands for the channel at its
+        // position among the object's UIDs of the same pack, as the EAR
+        // takes it
+        std::map<std::string, size_t> position_in_pack;
         for (const auto& uid : object->getReferences<adm::AudioTrackUid>()) {
+            auto uid_pack = uid->getReference<adm::AudioPackFormat>();
+            const auto in_pack = uid_pack ? uid_pack : object_pack;
+            const size_t index = in_pack ? position_in_pack[adm::formatId(in_pack->get<adm::AudioPackFormatId>())]++ : 0;
             const std::string uid_id = upper(adm::formatId(uid->get<adm::AudioTrackUidId>()));
             if (uid_id == "ATU_00000000") {
                 result.warnings.push_back("audioObject '" + name + "': silent track (ATU_00000000) ignored");
@@ -598,7 +641,16 @@ inline selection select_items(const loaded_file& file, int programme_index = -1)
                 continue;
             }
             const int track = track_it->second;
-            const auto cf = channel_format_of(uid);
+            auto cf = channel_format_of(uid);
+            if (!cf && in_pack) {
+                size_t k = 0;
+                for (const auto& channel : in_pack->getReferences<adm::AudioChannelFormat>()) {
+                    if (k++ == index) {
+                        cf = channel;
+                        break;
+                    }
+                }
+            }
             if (!cf) {
                 result.warnings.push_back("audioObject '" + name + "': " + uid_id + " has no audioChannelFormat; track skipped");
                 continue;
