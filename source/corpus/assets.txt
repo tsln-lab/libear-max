@@ -1,7 +1,11 @@
-# The files of the ADM corpus: the release assets of
-# https://github.com/tsln-lab/adm-test-corpus/releases/tag/v1.0.0 (the EBU's
-# ADM test materials, CC BY 4.0), as "<asset name> <sha256>"; the asset is a
-# BW64 file and is saved as <asset name>.wav. tools/fetch_corpus.sh reads this.
+# The files of the ADM corpus: release assets of
+# https://github.com/tsln-lab/adm-test-corpus (CC BY 4.0), as
+# "<asset name> <sha256>" under a "release <tag>" line naming the release
+# they belong to; the asset is a BW64 file and is saved as <asset name>.wav.
+# tools/fetch_corpus.sh reads this.
+
+# The EBU's ADM test materials, unmodified
+release v1.0.0
 Channel-based.22.2 ea697a6987d542f76f764dd8babec1ba837ababfd2673dd04d21a3026f2a9714
 Channel-based.5.1 017d784c6164bf6119e1f6e6f129d3684bf717ca0d9fdee3dd67fc6ec7178b91
 Channel-based.5.1.4 a1fbad7ce73af8ca95559a48e3caca0f62abd6baa0b6866600d1b2d196615ed1
@@ -20,3 +24,11 @@ Panning.Engine.Noise.in.Cartesian.Coordinates 24f758c8c617a00d4dab5bc051b472a896
 Panning.Engine.Noise.in.Polar.Coordinates 7e97d9cfe16bcf6776e4b84ccf01ac8b1f21a712f789bbfe59d09ae6c718ed5b
 Two.Language.Interactive.Programme.ADM.Test.File c431d7f7cdaa6147224c827aabd95568ae7d44af8860e6c5f46272e46905fc2e
 Two.Language.Programmes.ADM.Test.File 93b2e8b401577ad1eb08a2e11debecae13a6968cb9ada99e3e4dae03cb4ff165
+
+# Netflix's Dolby Atmos master ADM files (Meridian, Nocturne, Sol Levante),
+# trimmed to their first seconds of audio with tools/trim_bw64.py of the
+# corpus repository; the ADM metadata, chna and dbmd chunks are the originals
+release netflix-v1.0.0
+meridian.wav d093de0e21624b854c12af03d0da859413f80d051377a6ca9316e4c23aec9bac
+nocturne.wav 584672d89b1d00137b58226c2d5672374bb7751395a66d8b0179dd0d37bb201a
+sollevante.wav 922e830b57b35c64f94c8cf274073e8f2f26b7e7379f28539362cbf01f75d545
