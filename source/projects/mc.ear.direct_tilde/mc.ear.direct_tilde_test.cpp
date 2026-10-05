@@ -211,6 +211,76 @@ SCENARIO("mc.ear.direct~ renders a channel bed to a multichannel loudspeaker sig
 }
 
 
+SCENARIO("mc.ear.direct~ takes an LFE label as the LFE indication") {
+    ext_main(nullptr);
+
+    GIVEN("an instance rendering to 4+5+0") {
+        test_wrapper_args<mc_ear_direct_tilde> an_instance(atoms{ symbol("4+5+0") });
+        mc_ear_direct_tilde& obj = an_instance;
+
+        WHEN("a channel is labelled LFE1 before any lfe flag, as the ADM player sends a Dolby master's bed") {
+            obj.setvalue(atoms{ 4, symbol("speakerlabel"), symbol("LFE1") });
+            THEN("the channel carries the LFE frequency element, so the label and the element agree") {
+                REQUIRE(obj.metadata(3).dstm.channelFrequency.lowPass.has_value());
+                REQUIRE(obj.metadata(3).dstm.channelFrequency.lowPass.get() == Approx(120.0));
+                REQUIRE(obj.gains(3)[3] == Approx(1.0));    // LFE1 of 4+5+0
+            }
+        }
+
+        WHEN("the label comes with the common definitions' URN prefix, or as LFE") {
+            obj.setvalue(atoms{ 1, symbol("speakerlabel"), symbol("urn:itu:bs:2051:0:speaker:LFE1") });
+            obj.setvalue(atoms{ 2, symbol("speakerlabel"), symbol("LFE") });
+            THEN("both are LFE channels") {
+                REQUIRE(obj.metadata(0).dstm.channelFrequency.lowPass.has_value());
+                REQUIRE(obj.metadata(1).dstm.channelFrequency.lowPass.has_value());
+            }
+        }
+
+        WHEN("a channel is labelled M+030") {
+            obj.setvalue(atoms{ 1, symbol("speakerlabel"), symbol("M+030") });
+            THEN("no frequency element is added") {
+                REQUIRE(!obj.metadata(0).dstm.channelFrequency.lowPass.has_value());
+            }
+        }
+
+        WHEN("an LFE label is replaced by another label") {
+            obj.setvalue(atoms{ 4, symbol("speakerlabel"), symbol("LFE1") });
+            obj.setvalue(atoms{ 4, symbol("speakerlabel"), symbol("M+030") });
+            THEN("the frequency element the label brought goes with it") {
+                REQUIRE(!obj.metadata(3).dstm.channelFrequency.lowPass.has_value());
+                REQUIRE(obj.gains(3)[0] == Approx(1.0));    // M+030 of 4+5+0
+            }
+        }
+
+        WHEN("an explicit lfe flag is followed by another label") {
+            obj.setvalue(atoms{ 4, symbol("lfe"), 1 });
+            obj.setvalue(atoms{ 4, symbol("speakerlabel"), symbol("LFE1") });
+            obj.setvalue(atoms{ 4, symbol("speakerlabel"), symbol("M+030") });
+            THEN("the explicit flag stays") {
+                REQUIRE(obj.metadata(3).dstm.channelFrequency.lowPass.has_value());
+            }
+        }
+
+        WHEN("an explicit lfe flag confirms an LFE label before another label replaces it") {
+            obj.setvalue(atoms{ 4, symbol("speakerlabel"), symbol("LFE1") });
+            obj.setvalue(atoms{ 4, symbol("lfe"), 1 });
+            obj.setvalue(atoms{ 4, symbol("speakerlabel"), symbol("M+030") });
+            THEN("the flag made the element explicit, so it stays") {
+                REQUIRE(obj.metadata(3).dstm.channelFrequency.lowPass.has_value());
+            }
+        }
+
+        WHEN("lfe is turned off after an LFE label") {
+            obj.setvalue(atoms{ 4, symbol("speakerlabel"), symbol("LFE1") });
+            obj.setvalue(atoms{ 4, symbol("lfe"), 0 });
+            THEN("the element is removed, though the label still makes libear render the channel as LFE") {
+                REQUIRE(!obj.metadata(3).dstm.channelFrequency.lowPass.has_value());
+                REQUIRE(obj.gains(3)[3] == Approx(1.0));    // LFE1 of 4+5+0
+            }
+        }
+    }
+}
+
 SCENARIO("mc.ear.direct~ grows its allocation when a message or the input addresses more channels") {
     ext_main(nullptr);
 
