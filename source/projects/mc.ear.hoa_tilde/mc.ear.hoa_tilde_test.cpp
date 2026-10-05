@@ -221,6 +221,17 @@ SCENARIO("mc.ear.hoa~ decodes an ambisonic scene to a multichannel loudspeaker s
             }
         }
 
+        WHEN("a single channel is connected, as mc.ear.play~ carries for a file without a scene") {
+            REQUIRE(obj.mc_input_changed(0, 1) == 0);
+            obj.align = false;
+            mc_audio_io io(1, k_channels_050, k_block);
+            std::fill(io.ins[0].begin(), io.ins[0].end(), 1.0);
+            obj(io.input(), io.output());
+            THEN("it is decoded as W alone, without a channel count warning") {
+                REQUIRE(io.outs[k_m000][k_block - 1] == Approx(obj.gains(0)[k_m000]));
+            }
+        }
+
         WHEN("more input channels than components are connected") {
             REQUIRE(obj.mc_input_changed(0, 9) == 0);
             obj.align = false;
