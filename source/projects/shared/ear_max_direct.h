@@ -11,6 +11,22 @@
 
 namespace earmax {
 
+/// Whether a speaker label names an LFE channel: LFE1 or LFE2 of the
+/// BS.2051 layouts, the LFE/LFEL/LFER spellings of the common definitions,
+/// with or without the BS.2051 URN prefix ("urn:itu:bs:2051:0:speaker:LFE1").
+inline bool is_lfe_label(const std::string& label)
+{
+    std::string name = label;
+    const std::string prefix = "urn:itu:bs:2051:";
+    if (name.compare(0, prefix.size(), prefix) == 0) {
+        const size_t colon = name.find(":speaker:", prefix.size());
+        if (colon != std::string::npos) {
+            name = name.substr(colon + 9);
+        }
+    }
+    return name == "LFE1" || name == "LFE2" || name == "LFE" || name == "LFEL" || name == "LFER";
+}
+
 /// ADM DirectSpeakers metadata for one channel, with parameters applied by name.
 struct direct_metadata {
     ear::DirectSpeakersTypeMetadata dstm;
@@ -82,8 +98,17 @@ struct direct_metadata {
 
         if (name == "speakerlabel") {
             dstm.speakerLabels.clear();
+            bool lfe = false;
             for (const auto& a : args) {
                 dstm.speakerLabels.push_back(std::string(a));
+                lfe = lfe || is_lfe_label(std::string(a));
+            }
+            // an LFE label marks the channel as LFE, as libear's calculator
+            // takes it; a Dolby Atmos master's bed has no frequency element,
+            // and a label sent before the lfe flag would otherwise be
+            // recalculated once with a mismatch warning
+            if (lfe) {
+                dstm.channelFrequency.lowPass = 120.0;
             }
         }
         else if (name == "azimuth") {
