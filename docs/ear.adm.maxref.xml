@@ -82,6 +82,10 @@
 			<digest>Name an object for writing: 'name N symbol' (N is 1-based)</digest>
 			<description>Name an object for writing: 'name N symbol' (N is 1-based).</description>
 		</method>
+		<method name='overview'>
+			<digest>Write a waveform overview of the read file into a buffer~ for waveform~: 'overview name [bins per second]' (100 by default)</digest>
+			<description>Write a waveform overview of the read file into a buffer~ for waveform~: 'overview name [bins per second]' (100 by default). The file is scanned on a thread of its own, then the buffer~ gets one channel per file track and two samples per bin, the lowest then the highest sample of the bin, at a sample rate of twice the bins per second, so waveform~ draws the file's own timeline. 'overview name channels bins bins-per-second' is reported on the info outlet when the buffer~ is written.</description>
+		</method>
 		<method name='profile'>
 			<arglist>
 				<arg name='profile' optional='0' type='symbol' />

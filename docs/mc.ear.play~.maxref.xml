@@ -42,6 +42,10 @@
 			<digest>Open an ADM (BW64) file: 'open path'</digest>
 			<description>Open an ADM (BW64) file: 'open path'. Reports the file, its programmes and rendering items on the info outlet, sends the static bed and scene metadata to the renderer outlets and emits the object metadata for time 0. The signal outlets take the file's channel counts when the audio is restarted.</description>
 		</method>
+		<method name='overview'>
+			<digest>Write a waveform overview of the open file into a buffer~ for waveform~: 'overview name [bins per second]' (100 by default)</digest>
+			<description>Write a waveform overview of the open file into a buffer~ for waveform~: 'overview name [bins per second]' (100 by default). The file is scanned on a thread of its own, then the buffer~ gets one channel per file track and two samples per bin, the lowest then the highest sample of the bin, at a sample rate of twice the bins per second, so waveform~ draws the file's own timeline. 'overview name channels bins bins-per-second' is reported on the info outlet when the buffer~ is written.</description>
+		</method>
 		<method name='pause'>
 			<digest>Stop playing at the current position; 'resume' continues from there</digest>
 			<description>Stop playing at the current position; 'resume' continues from there.</description>

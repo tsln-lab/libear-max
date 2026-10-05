@@ -12,6 +12,33 @@
 #include <string>
 #include <vector>
 
+// The mock kernel has no buffer~: the functions the overview writer links
+// against (ear_max_overview.h) are stubbed here so that every object test
+// links, and a write reports "no buffer~ named ...".
+namespace c74::max {
+t_buffer_ref* buffer_ref_new(t_object*, t_symbol*)
+{
+    return nullptr;
+}
+void buffer_ref_set(t_buffer_ref*, t_symbol*) {}
+t_atom_long buffer_ref_exists(t_buffer_ref*)
+{
+    return 0;
+}
+t_max_err buffer_ref_notify(t_buffer_ref*, t_symbol*, t_symbol*, void*, void*)
+{
+    return 0;
+}
+t_max_err buffer_setdirty(t_buffer_obj*)
+{
+    return 0;
+}
+t_max_err object_method_typed(void*, t_symbol*, long, t_atom*, t_atom*)
+{
+    return 0;
+}
+} // namespace c74::max
+
 namespace earmax_test {
 
 using namespace c74::min;

@@ -11,6 +11,7 @@
 #include "../shared/ear_max.h"
 #include "../shared/ear_max_adm_capture.h"
 #include "../shared/ear_max_adm_player.h"
+#include "../shared/ear_max_overview.h"
 
 #include <cmath>
 #include <fstream>
@@ -163,6 +164,23 @@ public:
             }
             select_programme(std::max(0, static_cast<int>(static_cast<double>(args[0])) - 1));
             return {};
+        } };
+
+    message<> overview{ this, "overview",
+        "Write a waveform overview of the read file into a buffer~ for waveform~: 'overview name [bins per second]' "
+        "(100 by default). The file is scanned on a thread of its own, then the buffer~ gets one channel per file "
+        "track and two samples per bin, the lowest then the highest sample of the bin, at a sample rate of twice "
+        "the bins per second, so waveform~ draws the file's own timeline. 'overview name channels bins "
+        "bins-per-second' is reported on the info outlet when the buffer~ is written.",
+        MIN_FUNCTION {
+            start_overview(args);
+            return {};
+        } };
+
+    message<> notify{ this, "notify",
+        MIN_FUNCTION {
+            notification n{ args };
+            return { m_overview_buffer.notify(n.registration(), n.name(), n.source(), n.data()) };
         } };
 
     message<> dump{ this, "dump", "Report the file, its programmes, rendering items and warnings on the info outlet.",
@@ -543,8 +561,83 @@ public:
         advance(false);
     }
 
+    /// the overview scan has finished and waits for the main thread (tests)
+    bool overview_ready() const
+    {
+        return m_scanner.ready();
+    }
+
+    /// take the finished overview to the buffer~ (tests: the mock kernel has no queue)
+    void flush_overview()
+    {
+        on_overview();
+    }
+
+    /// the last overview taken (tests)
+    const admio::overview& last_overview() const
+    {
+        return m_last_overview;
+    }
+
 private:
     double m_capture_time_override{ -1.0 };
+
+    // the overview: scanned on its own thread, written on the main thread
+    queue<> m_overview_queue{ this, MIN_FUNCTION {
+        on_overview();
+        return {};
+    } };
+    admio::overview_scanner m_scanner;    // after the queue: joined before the queue goes
+    admio::overview_buffer m_overview_buffer{ this };
+    admio::overview m_last_overview;
+
+    void start_overview(const atoms& args)
+    {
+        if (args.empty() || !atom_is_symbol(args[0])) {
+            cerr << "overview needs the name of a buffer~" << endl;
+            return;
+        }
+        double bins_per_second = 100.0;
+        if (args.size() > 1) {
+            if (!atom_is_numeric(args[1]) || !(static_cast<double>(args[1]) > 0.0) || !std::isfinite(static_cast<double>(args[1]))) {
+                cerr << "overview: the bins per second must be a positive number" << endl;
+                return;
+            }
+            bins_per_second = static_cast<double>(args[1]);
+        }
+        if (!m_player.loaded()) {
+            cerr << "overview: no file read" << endl;
+            return;
+        }
+        if (m_scanner.running()) {
+            cerr << "overview: a scan is already running" << endl;
+            return;
+        }
+        m_scanner.start(m_player.info().path, bins_per_second, std::string(args[0]), [this] { m_overview_queue.set(); });
+    }
+
+    void on_overview()
+    {
+        if (!m_scanner.ready()) {
+            return;
+        }
+        std::string error;
+        m_last_overview = m_scanner.take(error);
+        if (!error.empty()) {
+            cerr << "overview: " << error << endl;
+            return;
+        }
+        if (m_last_overview.bins == 0) {
+            cerr << "overview: the file has no audio" << endl;
+            return;
+        }
+        if (!m_overview_buffer.write(m_scanner.buffer(), m_last_overview, error)) {
+            cerr << "overview: " << error << endl;
+            return;
+        }
+        out_info.send("overview", symbol(m_scanner.buffer()), static_cast<int>(m_last_overview.channels),
+                      static_cast<int>(m_last_overview.bins), m_last_overview.bins_per_second);
+    }
     admio::adm_profile m_profile{ admio::adm_profile::ebu };
 
     std::string programme_name() const

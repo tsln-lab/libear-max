@@ -6,9 +6,12 @@
 ///          be ready.
 /// @license Use of this source code is governed by the MIT License found in the License.md file.
 
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <sstream>
+#include <thread>
 
 #include "../shared/ear_max_test.h"
 #include "mc.ear.play_tilde.h"
@@ -736,6 +739,160 @@ SCENARIO("mc.ear.play~ emits the object metadata from the audio clock") {
                 REQUIRE(contains(objects, "setvalue 1 position -30 0 1"));
                 REQUIRE(contains(objects, "setvalue 2 position 90 0 1"));
             }
+        }
+    }
+}
+
+namespace {
+
+/// a one-second file with two tracks: a ramp from -1 to +1 on track 1, a
+/// constant 0.25 with one -0.75 sample at frame 24000 on track 2, and one
+/// object per track
+std::string write_overview_fixture()
+{
+    const std::string audio = std::string(EARMAX_TEST_OUT_DIR) + "/overview_audio.wav";
+    const std::string out = std::string(EARMAX_TEST_OUT_DIR) + "/overview_fixture.wav";
+    constexpr uint64_t frames = 48000;
+    {
+        auto writer = bw64::writeFile(audio, 2, 48000, 24);
+        std::vector<float> interleaved(static_cast<size_t>(frames) * 2);
+        for (size_t f = 0; f < frames; ++f) {
+            interleaved[f * 2] = -1.0f + 2.0f * static_cast<float>(f) / static_cast<float>(frames - 1);
+            interleaved[f * 2 + 1] = f == 24000 ? -0.75f : 0.25f;
+        }
+        writer->write(interleaved.data(), frames);
+    }
+    admio::captured_object one;
+    one.name = "ramp";
+    admio::object_state s;
+    one.blocks.push_back({ 0.0, 0.0, s });
+    admio::captured_object two;
+    two.name = "flat";
+    two.blocks.push_back({ 0.0, 0.0, s });
+    std::vector<bw64::AudioId> chna_ids;
+    auto doc = admio::build_document("overview", { one, two }, 1.0, chna_ids);
+    std::remove(out.c_str());
+    admio::write_file(out, audio, doc, chna_ids);
+    return out;
+}
+
+bool wait_overview(mc_ear_play_tilde& obj, int timeout_ms)
+{
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+    while (!obj.overview_ready()) {
+        if (std::chrono::steady_clock::now() > deadline) {
+            return false;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return true;
+}
+
+} // namespace
+
+SCENARIO("the overview of a file holds the lowest and highest sample of every bin") {
+    const std::string path = write_overview_fixture();
+
+    GIVEN("the fixture scanned at 10 bins per second") {
+        auto reader = bw64::readFile(path);
+        const auto ov = admio::compute_overview(*reader, 10.0);
+
+        THEN("it has one bin per 4800 frames and two channels") {
+            REQUIRE(ov.samplerate == 48000);
+            REQUIRE(ov.channels == 2);
+            REQUIRE(ov.bins == 10);
+            REQUIRE(ov.bins_per_second == Approx(10.0));
+            REQUIRE(ov.buffer_rate() == Approx(20.0));
+            REQUIRE(ov.data.size() == 10 * 2 * 2);
+        }
+
+        THEN("the ramp's bins span its rise and the flat track keeps its one dip") {
+            REQUIRE(ov.minimum(0, 0) == Approx(-1.0).margin(1e-4));
+            REQUIRE(ov.maximum(0, 0) == Approx(-0.8).margin(1e-3));
+            REQUIRE(ov.minimum(9, 0) == Approx(0.8).margin(1e-3));
+            REQUIRE(ov.maximum(9, 0) == Approx(1.0).margin(1e-4));
+            for (size_t b = 0; b < 10; ++b) {
+                REQUIRE(ov.maximum(b, 1) == Approx(0.25).margin(1e-4));
+                REQUIRE(ov.minimum(b, 1) == Approx(b == 5 ? -0.75 : 0.25).margin(1e-4));
+            }
+        }
+
+        THEN("the layout is a buffer~'s: minima on even frames, maxima on odd frames, channels interleaved") {
+            REQUIRE(ov.data[(2 * 5) * 2 + 1] == Approx(-0.75).margin(1e-4));
+            REQUIRE(ov.data[(2 * 5 + 1) * 2 + 1] == Approx(0.25).margin(1e-4));
+        }
+    }
+
+    GIVEN("a bin rate that does not divide the file") {
+        auto reader = bw64::readFile(path);
+        const auto ov = admio::compute_overview(*reader, 7.0);
+        THEN("the last bin takes the remainder") {
+            REQUIRE(ov.bins == 7);    // 48000 / (48000 / 7) rounds up to 7 full bins
+            REQUIRE(ov.maximum(6, 0) == Approx(1.0).margin(1e-4));
+        }
+    }
+
+    GIVEN("a scan that is cancelled") {
+        auto reader = bw64::readFile(path);
+        std::atomic<bool> cancel{ true };
+        const auto ov = admio::compute_overview(*reader, 10.0, &cancel);
+        THEN("nothing comes back") {
+            REQUIRE(ov.bins == 0);
+            REQUIRE(ov.data.empty());
+        }
+    }
+}
+
+SCENARIO("mc.ear.play~ scans an overview of the open file on its own thread") {
+    ext_main(nullptr);
+    const std::string path = write_overview_fixture();
+
+    GIVEN("an instance that opened the fixture") {
+        test_wrapper<mc_ear_play_tilde> an_instance;
+        mc_ear_play_tilde& obj = an_instance;
+        obj.open(atoms{ symbol(path) });
+        REQUIRE(obj.loaded());
+
+        WHEN("an overview is asked for at 10 bins per second") {
+            obj.overview(atoms{ symbol("ov"), 10 });
+            REQUIRE(wait_overview(obj, 5000));
+            obj.flush_overview();    // the main thread's part (the mock kernel has no buffer~, so the write reports)
+            THEN("the scan is taken: two tracks, ten bins, the file's samples") {
+                const auto& ov = obj.last_overview();
+                REQUIRE(ov.channels == 2);
+                REQUIRE(ov.bins == 10);
+                REQUIRE(ov.minimum(5, 1) == Approx(-0.75).margin(1e-4));
+                REQUIRE(!obj.overview_ready());
+            }
+        }
+
+        WHEN("the bins per second are left out") {
+            obj.overview(atoms{ symbol("ov") });
+            REQUIRE(wait_overview(obj, 5000));
+            obj.flush_overview();
+            THEN("100 per second are used") {
+                REQUIRE(obj.last_overview().bins == 100);
+                REQUIRE(obj.last_overview().buffer_rate() == Approx(200.0));
+            }
+        }
+
+        WHEN("the arguments are wrong") {
+            obj.overview(atoms{});
+            obj.overview(atoms{ symbol("ov"), 0 });
+            obj.overview(atoms{ symbol("ov"), symbol("fast") });
+            THEN("no scan starts") {
+                REQUIRE(!obj.overview_ready());
+                REQUIRE(obj.last_overview().bins == 0);
+            }
+        }
+    }
+
+    GIVEN("an instance without a file") {
+        test_wrapper<mc_ear_play_tilde> an_instance;
+        mc_ear_play_tilde& obj = an_instance;
+        obj.overview(atoms{ symbol("ov") });
+        THEN("the request is refused") {
+            REQUIRE(!obj.overview_ready());
         }
     }
 }

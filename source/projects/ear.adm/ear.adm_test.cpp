@@ -4,8 +4,10 @@
 ///          renderer messages, the transport, and the capture / write round trip.
 /// @license Use of this source code is governed by the MIT License found in the License.md file.
 
+#include <chrono>
 #include <cstdio>
 #include <sstream>
+#include <thread>
 
 #include "../shared/ear_max_test.h"
 #include "ear.adm.h"
@@ -1462,6 +1464,41 @@ SCENARIO("ear.adm reads files whose tracks are described by the chna chunk only"
             REQUIRE(items.direct[1].labels == std::vector<std::string>{ "urn:itu:bs:2051:0:speaker:M-030" });
             REQUIRE(items.objects.size() == 1);
             REQUIRE(items.objects[0].blocks[0].state.azimuth == Approx(45.0));
+        }
+    }
+}
+
+SCENARIO("ear.adm scans an overview of the read file on its own thread") {
+    ext_main(nullptr);
+
+    GIVEN("an instance that read the parity fixture") {
+        test_wrapper<ear_adm> an_instance;
+        ear_adm& obj = an_instance;
+        obj.read(atoms{ symbol(k_fixture) });
+        REQUIRE(obj.loaded());
+
+        WHEN("an overview is asked for at 100 bins per second") {
+            obj.overview(atoms{ symbol("ov"), 100 });
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+            while (!obj.overview_ready() && std::chrono::steady_clock::now() < deadline) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            REQUIRE(obj.overview_ready());
+            obj.flush_overview();    // the main thread's part (the mock kernel has no buffer~, so the write reports)
+            THEN("the 12 tracks of 4800 frames give ten bins each") {
+                const auto& ov = obj.last_overview();
+                REQUIRE(ov.channels == 12);
+                REQUIRE(ov.bins == 10);
+                REQUIRE(ov.buffer_rate() == Approx(200.0));
+                REQUIRE(ov.data.size() == 10 * 2 * 12);
+            }
+        }
+
+        WHEN("an overview is asked for without a buffer~ name") {
+            obj.overview(atoms{});
+            THEN("no scan starts") {
+                REQUIRE(!obj.overview_ready());
+            }
         }
     }
 }
