@@ -113,10 +113,12 @@ SCENARIO("mc.ear.objects~ renders several objects to a multichannel loudspeaker 
             }
         }
 
-        WHEN("an out-of-range object index or an unknown parameter is used") {
-            obj.setvalue(atoms{ 17, symbol("azimuth"), 30.0 });
+        WHEN("an object index beyond the cap, a negative one or an unknown parameter is used") {
+            obj.setvalue(atoms{ 2000, symbol("azimuth"), 30.0 });
+            obj.setvalue(atoms{ -1, symbol("azimuth"), 30.0 });
             obj.setvalue(atoms{ 1, symbol("nonsense"), 30.0 });
             THEN("nothing changes") {
+                REQUIRE(obj.object_count() == 16);
                 for (size_t i = 0; i < obj.object_count(); ++i) {
                     REQUIRE(obj.metadata(i).azimuth == Approx(0.0));
                 }
@@ -239,6 +241,62 @@ SCENARIO("mc.ear.objects~ renders several objects to a multichannel loudspeaker 
             REQUIRE(obj.object_count() == 4);
             REQUIRE(obj.channel_count() == 10);
             REQUIRE(obj.direct_gains(3).size() == 10);
+        }
+    }
+}
+
+
+SCENARIO("mc.ear.objects~ grows its allocation when a message or the input addresses more objects") {
+    ext_main(nullptr);
+
+    GIVEN("an instance with the default 16 objects") {
+        test_wrapper_args<mc_ear_objects_tilde> an_instance(atoms{ symbol("0+5+0") });
+        mc_ear_objects_tilde& obj = an_instance;
+        REQUIRE(obj.object_count() == 16);
+
+        WHEN("setvalue addresses object 118, as a 128-track Dolby master does") {
+            obj.setvalue(atoms{ 118, symbol("azimuth"), 30.0 });
+            THEN("118 objects are allocated with gains for the layout, and chans follows") {
+                REQUIRE(obj.object_count() == 118);
+                REQUIRE(static_cast<int>(obj.chans) == 118);
+                REQUIRE(obj.direct_gains(117).size() == k_channels_050);
+                REQUIRE(obj.direct_gains(117)[k_m030] == Approx(1.0));
+            }
+        }
+
+        WHEN("applyvalues gives 20 values") {
+            atoms gains{ symbol("gain") };
+            for (int i = 0; i < 20; ++i) {
+                gains.push_back(0.5);
+            }
+            obj.applyvalues(gains);
+            THEN("20 objects are allocated") {
+                REQUIRE(obj.object_count() == 20);
+                REQUIRE(obj.direct_gains(19)[k_m000] == Approx(0.5));
+            }
+        }
+
+        WHEN("the input signal carries 20 channels and the audio is restarted") {
+            obj.vector_size(k_block);
+            obj.samplerate(48000.0);
+            obj.decorrelate = false;
+            obj.ramp = 0.0;
+            REQUIRE(obj.mc_input_changed(0, 20) == 0);
+            obj.dspsetup(atoms{ 48000.0, k_block });
+            mc_audio_io io(20, k_channels_050, k_block);
+            for (auto& in : io.ins) std::fill(in.begin(), in.end(), 1.0);
+            obj(io.input(), io.output());
+            THEN("all 20 objects are rendered") {
+                REQUIRE(obj.object_count() == 20);
+                REQUIRE(io.outs[k_m000][k_block - 1] == Approx(20.0));
+            }
+        }
+
+        WHEN("setvalue addresses an object beyond the cap") {
+            obj.setvalue(atoms{ 2000, symbol("gain"), 0.5 });
+            THEN("nothing is allocated") {
+                REQUIRE(obj.object_count() == 16);
+            }
         }
     }
 }

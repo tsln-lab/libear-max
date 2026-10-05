@@ -14,6 +14,11 @@ namespace earmax {
 
 using namespace c74::min;
 
+/// The most input channels (objects, bed channels) a multichannel renderer
+/// allocates; the allocation grows by itself up to this when a message or
+/// the input signal addresses more than the `chans` attribute holds.
+constexpr size_t k_max_mc_inputs = 1024;
+
 /// Parse the first atom of a `setvalue` message as an input index: 1-based,
 /// 0 meaning all inputs (as in Max's mc objects). Returns false on error.
 template <class error_fn>
