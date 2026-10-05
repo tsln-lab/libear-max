@@ -261,6 +261,15 @@ SCENARIO("mc.ear.direct~ takes an LFE label as the LFE indication") {
             }
         }
 
+        WHEN("an explicit lfe flag confirms an LFE label before another label replaces it") {
+            obj.setvalue(atoms{ 4, symbol("speakerlabel"), symbol("LFE1") });
+            obj.setvalue(atoms{ 4, symbol("lfe"), 1 });
+            obj.setvalue(atoms{ 4, symbol("speakerlabel"), symbol("M+030") });
+            THEN("the flag made the element explicit, so it stays") {
+                REQUIRE(obj.metadata(3).dstm.channelFrequency.lowPass.has_value());
+            }
+        }
+
         WHEN("lfe is turned off after an LFE label") {
             obj.setvalue(atoms{ 4, symbol("speakerlabel"), symbol("LFE1") });
             obj.setvalue(atoms{ 4, symbol("lfe"), 0 });
