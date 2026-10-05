@@ -229,11 +229,22 @@ SCENARIO("mc.ear.direct~ grows its allocation when a message or the input addres
             }
         }
 
-        WHEN("the input signal carries 24 channels") {
+        WHEN("the input signal carries 24 channels and the audio is restarted") {
             REQUIRE(obj.mc_input_changed(0, 24) == 0);
-            THEN("24 channels are allocated") {
+            obj.setvalue(atoms{ 24, symbol("speakerlabel"), symbol("M+030") });
+            obj.vector_size(k_block);
+            obj.samplerate(48000.0);
+            obj.ramp = 0.0;
+            obj.align = false;
+            obj.dspsetup(atoms{ 48000.0, k_block });
+            mc_audio_io io(24, k_channels_450, k_block);
+            std::fill(io.ins[23].begin(), io.ins[23].end(), 1.0);
+            obj(io.input(), io.output());
+            THEN("24 channels are allocated and the new channel is rendered") {
                 REQUIRE(obj.input_count() == 24);
                 REQUIRE(static_cast<int>(obj.chans) == 24);
+                REQUIRE(io.outs[0][k_block - 1] == Approx(1.0));    // M+030 of 4+5+0
+                REQUIRE(io.outs[2][k_block - 1] == Approx(0.0).margin(1e-12));
             }
         }
 
