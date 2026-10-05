@@ -3,6 +3,8 @@
 /// @license Use of this source code is governed by the MIT License found in the License.md file.
 
 #include <cmath>
+#include <iostream>
+#include <sstream>
 
 #include "../shared/ear_max_test.h"
 #include "mc.ear.hoa_tilde.h"
@@ -14,6 +16,15 @@ EARMAX_TEST_FORWARD_ARGUMENTS(mc_ear_hoa_tilde)
 using namespace earmax_test;
 
 namespace {
+
+/// Collects what the object posts to the console as errors or warnings
+/// (the Min logger writes them to std::cerr) while it is in scope.
+struct stderr_capture {
+    std::ostringstream text;
+    std::streambuf* previous;
+    stderr_capture() : previous(std::cerr.rdbuf(text.rdbuf())) {}
+    ~stderr_capture() { std::cerr.rdbuf(previous); }
+};
 
 // 0+5+0 channel order: M+030 M-030 M+000 LFE1 M+110 M-110
 constexpr size_t k_channels_050 = 6;
@@ -222,7 +233,11 @@ SCENARIO("mc.ear.hoa~ decodes an ambisonic scene to a multichannel loudspeaker s
         }
 
         WHEN("a single channel is connected, as mc.ear.play~ carries for a file without a scene") {
-            REQUIRE(obj.mc_input_changed(0, 1) == 0);
+            {
+                stderr_capture console;
+                REQUIRE(obj.mc_input_changed(0, 1) == 0);
+                REQUIRE(console.text.str().empty());
+            }
             obj.align = false;
             mc_audio_io io(1, k_channels_050, k_block);
             std::fill(io.ins[0].begin(), io.ins[0].end(), 1.0);
@@ -233,7 +248,11 @@ SCENARIO("mc.ear.hoa~ decodes an ambisonic scene to a multichannel loudspeaker s
         }
 
         WHEN("more input channels than components are connected") {
-            REQUIRE(obj.mc_input_changed(0, 9) == 0);
+            {
+                stderr_capture console;
+                REQUIRE(obj.mc_input_changed(0, 9) == 0);
+                REQUIRE(console.text.str().find("9 channels") != std::string::npos);
+            }
             obj.align = false;
             mc_audio_io io(9, k_channels_050, k_block);
             for (auto& in : io.ins) std::fill(in.begin(), in.end(), 1.0);
