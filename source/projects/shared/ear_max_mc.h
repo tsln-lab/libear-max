@@ -8,6 +8,7 @@
 
 #include "c74_min.h"
 
+#include <cmath>
 #include <string>
 
 namespace earmax {
@@ -28,11 +29,12 @@ bool parse_mc_index(const atoms& args, size_t count, long& index, error_fn&& err
         error("setvalue needs an input number (1-based, 0 for all) followed by a parameter");
         return false;
     }
-    index = static_cast<long>(static_cast<double>(args[0]));
-    if (index < 0 || static_cast<size_t>(index) > count) {
-        error("setvalue: input number out of range 0.." + std::to_string(count));
+    const double value = static_cast<double>(args[0]);
+    if (!std::isfinite(value) || std::trunc(value) != value || value < 0.0 || value > static_cast<double>(count)) {
+        error("setvalue: input number must be a whole number in the range 0.." + std::to_string(count));
         return false;
     }
+    index = static_cast<long>(value);
     return true;
 }
 

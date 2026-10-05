@@ -257,8 +257,11 @@ SCENARIO("mc.ear.direct~ grows its allocation when a message or the input addres
             }
         }
 
-        WHEN("setvalue addresses a channel beyond the cap") {
+        WHEN("setvalue addresses a channel beyond the cap, a fraction of one, or no number at all") {
             obj.setvalue(atoms{ 2000, symbol("lfe"), 1 });
+            obj.setvalue(atoms{ 1024.5, symbol("lfe"), 1 });
+            obj.setvalue(atoms{ 20.5, symbol("lfe"), 1 });
+            obj.setvalue(atoms{ std::numeric_limits<double>::infinity(), symbol("lfe"), 1 });
             THEN("nothing is allocated") {
                 REQUIRE(obj.input_count() == 16);
             }
