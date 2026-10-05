@@ -172,7 +172,11 @@ public:
 
     long mc_input_changed(long, long channels)
     {
-        if (channels != static_cast<long>(input_count()) && channels != m_reported_mismatch) {
+        // a single channel is what a multichannel outlet carries when it has
+        // nothing to carry (mc.ear.play~ on a file without a scene), and a
+        // one-component scene is order 0: either way the channel is W and the
+        // rest is silent, so there is nothing to report
+        if (channels != 1 && channels != static_cast<long>(input_count()) && channels != m_reported_mismatch) {
             m_reported_mismatch = channels;
             cerr << "input has " << channels << " channels but order " << m_order << " has " << input_count()
                  << " components; " << (channels > static_cast<long>(input_count()) ? "extra channels are ignored" : "missing components are silent")
