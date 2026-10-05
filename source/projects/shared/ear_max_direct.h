@@ -38,6 +38,9 @@ struct direct_metadata {
     /// polar: azimuthMin azimuthMax elevationMin elevationMax [distanceMin distanceMax];
     /// Cartesian: XMin XMax YMin YMax ZMin ZMax; or empty
     std::vector<double> bounds;
+    /// the frequency element was inferred from an LFE speaker label rather
+    /// than set by the lfe parameter, so a label that is not LFE removes it
+    bool lfe_from_label{ false };
 
     direct_metadata()
     {
@@ -108,7 +111,16 @@ struct direct_metadata {
             // and a label sent before the lfe flag would otherwise be
             // recalculated once with a mismatch warning
             if (lfe) {
-                dstm.channelFrequency.lowPass = 120.0;
+                if (!dstm.channelFrequency.lowPass) {    // an explicit lfe 1 stays explicit
+                    dstm.channelFrequency.lowPass = 120.0;
+                    lfe_from_label = true;
+                }
+            }
+            else if (lfe_from_label) {
+                // the element came from a label this one replaces; an
+                // explicit lfe 1 stays
+                dstm.channelFrequency.lowPass = boost::none;
+                lfe_from_label = false;
             }
         }
         else if (name == "azimuth") {
@@ -200,6 +212,7 @@ struct direct_metadata {
             else {
                 dstm.channelFrequency.lowPass = boost::none;
             }
+            lfe_from_label = false;
         }
         else if (name == "packformat") {
             const std::string id = args.empty() ? std::string() : std::string(args[0]);

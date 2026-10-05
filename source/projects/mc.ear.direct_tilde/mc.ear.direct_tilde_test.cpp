@@ -243,11 +243,30 @@ SCENARIO("mc.ear.direct~ takes an LFE label as the LFE indication") {
             }
         }
 
+        WHEN("an LFE label is replaced by another label") {
+            obj.setvalue(atoms{ 4, symbol("speakerlabel"), symbol("LFE1") });
+            obj.setvalue(atoms{ 4, symbol("speakerlabel"), symbol("M+030") });
+            THEN("the frequency element the label brought goes with it") {
+                REQUIRE(!obj.metadata(3).dstm.channelFrequency.lowPass.has_value());
+                REQUIRE(obj.gains(3)[0] == Approx(1.0));    // M+030 of 4+5+0
+            }
+        }
+
+        WHEN("an explicit lfe flag is followed by another label") {
+            obj.setvalue(atoms{ 4, symbol("lfe"), 1 });
+            obj.setvalue(atoms{ 4, symbol("speakerlabel"), symbol("LFE1") });
+            obj.setvalue(atoms{ 4, symbol("speakerlabel"), symbol("M+030") });
+            THEN("the explicit flag stays") {
+                REQUIRE(obj.metadata(3).dstm.channelFrequency.lowPass.has_value());
+            }
+        }
+
         WHEN("lfe is turned off after an LFE label") {
             obj.setvalue(atoms{ 4, symbol("speakerlabel"), symbol("LFE1") });
             obj.setvalue(atoms{ 4, symbol("lfe"), 0 });
-            THEN("the explicit flag wins") {
+            THEN("the element is removed, though the label still makes libear render the channel as LFE") {
                 REQUIRE(!obj.metadata(3).dstm.channelFrequency.lowPass.has_value());
+                REQUIRE(obj.gains(3)[3] == Approx(1.0));    // LFE1 of 4+5+0
             }
         }
     }
