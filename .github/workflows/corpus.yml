@@ -1,7 +1,8 @@
 name: ADM corpus
 
-# The opt-in check against the EBU's ADM test files (see README "Testing
-# against the EBU's ADM test files"): weekly and on request, not on pull
+# The opt-in check against the ADM test corpus (the EBU's ADM test files and
+# Netflix's Dolby Atmos master excerpts; see the documentation page "Testing
+# against the ADM test corpus"): weekly and on request, not on pull
 # requests, since the corpus is about three gigabytes.
 on:
   workflow_dispatch:

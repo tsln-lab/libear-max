@@ -19,8 +19,10 @@ and the Cartesian positions are passed on (`setvalue N cartesian 1`,
 the channel by position as the EAR does; the profile's positions coincide
 with the EAR's allocentric positions of these loudspeakers. The objects of
 such a file (Cartesian positions, sampled blocks with 5 ms ramps, zones)
-go through the normal path. Playing a 128-track master wants
-`@chans 118` on `mc.ear.objects~`.
+go through the normal path. The renderers allocate the channels a master
+needs by themselves (up to 118 objects and 30 bed channels in a 128-track
+master); the new channels take effect when the audio is restarted, so start
+the audio after loading the file, or restart it.
 
 ## Writing a Dolby Atmos master
 

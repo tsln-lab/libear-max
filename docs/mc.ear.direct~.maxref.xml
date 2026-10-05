@@ -48,7 +48,7 @@
 				<arg name='chans' optional='0' type='int' />
 			</arglist>
 			<digest>Set the chans attribute</digest>
-			<description>Set the <at>chans</at> attribute. Maximum number of input channels. Channels beyond this are ignored. Takes effect when the audio is restarted.</description>
+			<description>Set the <at>chans</at> attribute. Number of input channels allocated. It grows by itself when the input signal carries more channels, or a setvalue, applyvalues or inputlayout addresses a higher one, up to 1024; new channels take effect when the audio is restarted.</description>
 		</method>
 		<method name='inputlayout'>
 			<digest>Label the input channels after a BS.2051 layout: 'inputlayout 0+5+0' gives channels 1..6 the speaker labels M+030 M-030 M+000 LFE1 M+110 M-110 (LFE channels are marked as LFE)</digest>
@@ -82,8 +82,8 @@
 			<description>Delay the output by the latency of the object renderers (255 samples, the BS.2127 decorrelator compensation delay) so that a bed stays time-aligned with mc.ear.objects~ and ear.objects~ when their decorrelation is on, as the EAR reference renderer does. Turn off for zero latency when no decorrelating renderer is mixed in. Default: 1.</description>
 		</attribute>
 		<attribute name='chans' get='1' set='1' type='long' size='1'>
-			<digest>Maximum number of input channels</digest>
-			<description>Maximum number of input channels. Channels beyond this are ignored. Takes effect when the audio is restarted. Default: 16.</description>
+			<digest>Number of input channels allocated</digest>
+			<description>Number of input channels allocated. It grows by itself when the input signal carries more channels, or a setvalue, applyvalues or inputlayout addresses a higher one, up to 1024; new channels take effect when the audio is restarted. Default: 16.</description>
 		</attribute>
 		<attribute name='layout' get='1' set='1' type='symbol' size='1'>
 			<digest>ITU-R BS.2051 output layout name, fixed at creation (give it as argument)</digest>

@@ -76,10 +76,12 @@ public:
         } } };
 
     attribute<int> chans{ this, "chans", 16,
-        description{ "Maximum number of input channels. Channels beyond this are ignored. Takes effect when the audio is restarted." },
+        description{ "Number of input channels allocated. It grows by itself when the input signal carries more channels, or a setvalue, "
+                     "applyvalues or inputlayout addresses a higher one, up to 1024; new channels take effect when the "
+                     "audio is restarted." },
         setter{ MIN_FUNCTION {
             int n = static_cast<int>(args[0]);
-            n = std::max(1, std::min(n, 1024));
+            n = std::max(1, std::min(n, static_cast<int>(k_max_mc_inputs)));
             resize_channels(static_cast<size_t>(n));
             return { n };
         } } };
@@ -123,10 +125,7 @@ public:
                 return {};
             }
             const auto& channels = input.channels();
-            if (channels.size() > m_channels.size()) {
-                cerr << "inputlayout " << input.name() << " has " << channels.size() << " channels but only "
-                     << m_channels.size() << " are allocated (see the chans attribute)" << endl;
-            }
+            ensure_inputs(channels.size());
             for (size_t i = 0; i < m_channels.size(); ++i) {
                 direct_metadata& meta = m_channels[i].meta;
                 if (i < channels.size()) {
@@ -152,13 +151,14 @@ public:
         "an LFE label such as LFE1 also marks the channel as LFE).",
         MIN_FUNCTION {
             long index = 0;
-            if (!parse_mc_index(args, m_channels.size(), index, [this](const std::string& m) { cerr << m << endl; })) {
+            if (!parse_mc_index(args, k_max_mc_inputs, index, [this](const std::string& m) { cerr << m << endl; })) {
                 return {};
             }
             if (args.size() < 2 || !atom_is_symbol(args[1])) {
                 cerr << "setvalue needs a parameter name after the input number" << endl;
                 return {};
             }
+            ensure_inputs(static_cast<size_t>(index));
             const std::string name = args[1];
             const atoms rest(args.begin() + 2, args.end());
             if (index == 0) {
@@ -178,6 +178,7 @@ public:
                 return {};
             }
             const std::string name = args[0];
+            ensure_inputs(args.size() - 1);
             const size_t n = std::min(args.size() - 1, m_channels.size());
             for (size_t i = 0; i < n; ++i) {
                 apply_one(i, name, atoms{ args[i + 1] });
@@ -234,10 +235,12 @@ public:
 
     long mc_input_changed(long, long channels)
     {
+        // the allocation follows the input signal, as Max's mc objects do
+        ensure_inputs(static_cast<size_t>(std::max(0L, channels)));
         if (channels > static_cast<long>(m_channels.size()) && channels != m_reported_overflow) {
             m_reported_overflow = channels;
-            cerr << "input has " << channels << " channels but only " << m_channels.size()
-                 << " are allocated (see the chans attribute); extra channels are ignored" << endl;
+            cerr << "input has " << channels << " channels but at most " << m_channels.size()
+                 << " channels can be allocated; extra channels are ignored" << endl;
         }
         return 0;
     }
@@ -295,6 +298,20 @@ private:
             cerr << e.what() << "; known layouts: " << layout_names_joined() << endl;
             return false;
         }
+    }
+
+    /// Allocate channels up to n when a message or the input signal addresses
+    /// more than there are: the metadata takes effect at once, the audio
+    /// at the next DSP start, as after a change of the chans attribute.
+    void ensure_inputs(size_t n)
+    {
+        n = std::min(n, k_max_mc_inputs);
+        if (n <= m_channels.size()) {
+            return;
+        }
+        cout << "chans raised from " << m_channels.size() << " to " << n
+             << "; the new channels take effect when the audio is restarted" << endl;
+        chans = static_cast<int>(n);    // the setter allocates
     }
 
     void resize_channels(size_t n)

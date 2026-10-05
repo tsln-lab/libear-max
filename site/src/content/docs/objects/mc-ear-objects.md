@@ -11,9 +11,11 @@ every input channel is a DirectSpeakers channel (by label or position),
 rendered onto the layout.
 
 Both take the output layout as argument and have one multichannel inlet and
-one multichannel outlet. `@chans` sets the maximum number of input channels
-(default 16; extra input channels are ignored with a warning). Metadata is
-addressed per input channel in the style of Max's mc objects:
+one multichannel outlet. `@chans` is the number of input channels allocated,
+16 by default; it grows by itself when the input signal carries more channels
+or a message addresses a higher one, up to 1024, and the new channels take
+effect when the audio is restarted (a message posts the new count). Metadata
+is addressed per input channel in the style of Max's mc objects:
 
 - `setvalue <n> <parameter> <values...>` sets one parameter of input `n`
   (1-based); `setvalue 0 ...` sets it for all inputs.
