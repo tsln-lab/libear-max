@@ -210,4 +210,81 @@ SCENARIO("mc.ear.direct~ renders a channel bed to a multichannel loudspeaker sig
     }
 }
 
+
+SCENARIO("mc.ear.direct~ grows its allocation when a message or the input addresses more channels") {
+    ext_main(nullptr);
+
+    GIVEN("an instance with the default 16 channels") {
+        test_wrapper_args<mc_ear_direct_tilde> an_instance(atoms{ symbol("4+5+0") });
+        mc_ear_direct_tilde& obj = an_instance;
+        REQUIRE(obj.input_count() == 16);
+
+        WHEN("setvalue addresses channel 30, as a Dolby master with three beds does") {
+            obj.setvalue(atoms{ 30, symbol("speakerlabel"), symbol("M+000") });
+            THEN("30 channels are allocated, chans follows and the label is set") {
+                REQUIRE(obj.input_count() == 30);
+                REQUIRE(static_cast<int>(obj.chans) == 30);
+                REQUIRE(obj.metadata(29).dstm.speakerLabels == std::vector<std::string>{ "M+000" });
+                REQUIRE(obj.gains(29).size() == k_channels_450);
+            }
+        }
+
+        WHEN("the input signal carries 24 channels and the audio is restarted") {
+            REQUIRE(obj.mc_input_changed(0, 24) == 0);
+            obj.setvalue(atoms{ 24, symbol("speakerlabel"), symbol("M+030") });
+            obj.vector_size(k_block);
+            obj.samplerate(48000.0);
+            obj.ramp = 0.0;
+            obj.align = false;
+            obj.dspsetup(atoms{ 48000.0, k_block });
+            mc_audio_io io(24, k_channels_450, k_block);
+            std::fill(io.ins[23].begin(), io.ins[23].end(), 1.0);
+            obj(io.input(), io.output());
+            THEN("24 channels are allocated and the new channel is rendered") {
+                REQUIRE(obj.input_count() == 24);
+                REQUIRE(static_cast<int>(obj.chans) == 24);
+                REQUIRE(io.outs[0][k_block - 1] == Approx(1.0));    // M+030 of 4+5+0
+                REQUIRE(io.outs[2][k_block - 1] == Approx(0.0).margin(1e-12));
+            }
+        }
+
+        WHEN("inputlayout names 9+10+3") {
+            obj.inputlayout(atoms{ symbol("9+10+3") });
+            THEN("the 24 channels of the layout are allocated and labelled") {
+                REQUIRE(obj.input_count() == 24);
+                REQUIRE(obj.metadata(23).dstm.speakerLabels.size() == 1);
+            }
+        }
+
+        WHEN("applyvalues gives 20 values") {
+            atoms labels{ symbol("speakerlabel") };
+            for (int i = 0; i < 20; ++i) {
+                labels.push_back(symbol("M+000"));
+            }
+            obj.applyvalues(labels);
+            THEN("20 channels are allocated and the last one is labelled") {
+                REQUIRE(obj.input_count() == 20);
+                REQUIRE(obj.metadata(19).dstm.speakerLabels == std::vector<std::string>{ "M+000" });
+            }
+        }
+
+        WHEN("setvalue addresses a channel beyond the cap, a fraction of one, or no number at all") {
+            obj.setvalue(atoms{ 2000, symbol("lfe"), 1 });
+            obj.setvalue(atoms{ 1024.5, symbol("lfe"), 1 });
+            obj.setvalue(atoms{ 20.5, symbol("lfe"), 1 });
+            obj.setvalue(atoms{ std::numeric_limits<double>::infinity(), symbol("lfe"), 1 });
+            THEN("nothing is allocated") {
+                REQUIRE(obj.input_count() == 16);
+            }
+        }
+
+        WHEN("chans is set lower") {
+            obj.chans = 8;
+            THEN("the allocation shrinks: only growth is automatic") {
+                REQUIRE(obj.input_count() == 8);
+            }
+        }
+    }
+}
+
 EARMAX_TEST_GENERATE_MAXREF(mc_ear_direct_tilde, "mc.ear.direct~")

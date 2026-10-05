@@ -37,7 +37,7 @@
 				<arg name='chans' optional='0' type='int' />
 			</arglist>
 			<digest>Set the chans attribute</digest>
-			<description>Set the <at>chans</at> attribute. Maximum number of objects (input channels). Input channels beyond this are ignored. Takes effect when the audio is restarted.</description>
+			<description>Set the <at>chans</at> attribute. Number of objects (input channels) allocated. It grows by itself when the input signal carries more channels, or a setvalue or applyvalues addresses a higher one, up to 1024; new objects take effect when the audio is restarted.</description>
 		</method>
 		<method name='components'>
 			<digest>Post the ambisonic components of the output channels (ACN index, order and degree) to the Max console</digest>
@@ -78,8 +78,8 @@
 
 	<attributelist>
 		<attribute name='chans' get='1' set='1' type='long' size='1'>
-			<digest>Maximum number of objects (input channels)</digest>
-			<description>Maximum number of objects (input channels). Input channels beyond this are ignored. Takes effect when the audio is restarted. Default: 16.</description>
+			<digest>Number of objects (input channels) allocated</digest>
+			<description>Number of objects (input channels) allocated. It grows by itself when the input signal carries more channels, or a setvalue or applyvalues addresses a higher one, up to 1024; new objects take effect when the audio is restarted. Default: 16.</description>
 		</attribute>
 		<attribute name='normalization' get='1' set='1' type='symbol' size='1'>
 			<digest>Normalization of the ambisonic components: SN3D (the ADM default, also AmbiX), N3D or FuMa (up to order 3)</digest>

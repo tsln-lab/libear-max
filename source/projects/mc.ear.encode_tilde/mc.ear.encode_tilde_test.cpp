@@ -294,4 +294,30 @@ SCENARIO("mc.ear.encode~ encodes objects into an ambisonic scene") {
     }
 }
 
+
+SCENARIO("mc.ear.encode~ grows its allocation when a message or the input addresses more objects") {
+    ext_main(nullptr);
+
+    GIVEN("an instance with the default 16 objects") {
+        test_wrapper_args<mc_ear_encode_tilde> an_instance(atoms{ 1 });
+        mc_ear_encode_tilde& obj = an_instance;
+        REQUIRE(obj.object_count() == 16);
+
+        WHEN("setvalue addresses object 40") {
+            obj.setvalue(atoms{ 40, symbol("azimuth"), 90.0 });
+            THEN("40 objects are allocated and chans follows") {
+                REQUIRE(obj.object_count() == 40);
+                REQUIRE(static_cast<int>(obj.chans) == 40);
+            }
+        }
+
+        WHEN("the input signal carries 20 channels") {
+            REQUIRE(obj.mc_input_changed(0, 20) == 0);
+            THEN("20 objects are allocated") {
+                REQUIRE(obj.object_count() == 20);
+            }
+        }
+    }
+}
+
 EARMAX_TEST_GENERATE_MAXREF(mc_ear_encode_tilde, "mc.ear.encode~")
