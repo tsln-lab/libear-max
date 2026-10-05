@@ -267,6 +267,10 @@ SCENARIO("mc.ear.direct~ takes an LFE label as the LFE indication") {
             THEN("the element is removed, though the label still makes libear render the channel as LFE") {
                 REQUIRE(!obj.metadata(3).dstm.channelFrequency.lowPass.has_value());
                 REQUIRE(obj.gains(3)[3] == Approx(1.0));    // LFE1 of 4+5+0
+            }
+        }
+    }
+}
 
 SCENARIO("mc.ear.direct~ grows its allocation when a message or the input addresses more channels") {
     ext_main(nullptr);
