@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.3.0](https://github.com/tsln-lab/libear-max/compare/v1.2.0...v1.3.0) (2026-10-05)
+
+
+### Features
+
+* grow the multichannel renderers' allocation on demand ([#30](https://github.com/tsln-lab/libear-max/issues/30)) ([7f6fba1](https://github.com/tsln-lab/libear-max/commit/7f6fba1d12aef8a0ec20df495004e05581277c4a))
+
+
+### Bug Fixes
+
+* take a single-channel input of mc.ear.hoa~ as no scene without a warning ([#32](https://github.com/tsln-lab/libear-max/issues/32)) ([4b2cca4](https://github.com/tsln-lab/libear-max/commit/4b2cca4256a6318216952b7c8e5e4be25ec01b73))
+* take an LFE speaker label as the LFE indication in mc.ear.direct~ ([#31](https://github.com/tsln-lab/libear-max/issues/31)) ([40fb713](https://github.com/tsln-lab/libear-max/commit/40fb713eb662d7a4de2cc84f566aae0f5257cac2))
+
+
+### Documentation
+
+* add a documentation site built with Astro and Starlight ([#26](https://github.com/tsln-lab/libear-max/issues/26)) ([12d5ea6](https://github.com/tsln-lab/libear-max/commit/12d5ea6aad36a469e4b68ecbbb66f9d70c832b76))
+* describe the Netflix excerpts on the test corpus page ([#29](https://github.com/tsln-lab/libear-max/issues/29)) ([1eafbed](https://github.com/tsln-lab/libear-max/commit/1eafbed0c0be7c18b813ec472948c73988c6939d))
+
 ## [1.2.0](https://github.com/tsln-lab/libear-max/compare/v1.1.0...v1.2.0) (2026-10-04)
 
 
