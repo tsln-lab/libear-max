@@ -61,7 +61,7 @@ package in Max, clone (or symlink) the repository folder into
 `~/Documents/Max 9/Packages/` and build. The details per platform, the
 [repository layout](https://tsln-lab.github.io/libear-max/development/repository-layout/),
 the [design notes](https://tsln-lab.github.io/libear-max/development/design-notes/)
-and the [check against the EBU's ADM test files](https://tsln-lab.github.io/libear-max/adm/test-corpus/)
+and the [check against the ADM test corpus](https://tsln-lab.github.io/libear-max/adm/test-corpus/)
 are in the documentation.
 
 ## Documentation site
