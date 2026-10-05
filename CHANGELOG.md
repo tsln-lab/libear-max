@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.4.0](https://github.com/tsln-lab/libear-max/compare/v1.3.0...v1.4.0) (2026-10-05)
+
+
+### Features
+
+* write a waveform overview of the file into a buffer~ for waveform~ ([#34](https://github.com/tsln-lab/libear-max/issues/34)) ([d287c27](https://github.com/tsln-lab/libear-max/commit/d287c2732256f9cf0a6bc05ce91ec5c0323a9437))
+
+
+### Bug Fixes
+
+* let an overview scan finish on its own when its object goes ([#36](https://github.com/tsln-lab/libear-max/issues/36)) ([b6f4f49](https://github.com/tsln-lab/libear-max/commit/b6f4f49c76adcff2edd3273ea0522ceb0dbdf3f4))
+
 ## [1.3.0](https://github.com/tsln-lab/libear-max/compare/v1.2.0...v1.3.0) (2026-10-05)
 
 
