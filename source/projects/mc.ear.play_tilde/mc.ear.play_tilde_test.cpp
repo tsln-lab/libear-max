@@ -832,6 +832,17 @@ SCENARIO("the overview of a file holds the lowest and highest sample of every bi
         }
     }
 
+    GIVEN("more bins per second than the file has frames") {
+        auto reader = bw64::readFile(path);
+        const auto ov = admio::compute_overview(*reader, 1e300);
+        THEN("the bins are clamped to one per frame rather than a wrapped allocation") {
+            REQUIRE(ov.bins == 48000);
+            REQUIRE(ov.data.size() == 48000 * 2 * 2);
+            REQUIRE(ov.minimum(24000, 1) == Approx(-0.75).margin(1e-4));
+            REQUIRE(ov.maximum(24000, 1) == Approx(-0.75).margin(1e-4));
+        }
+    }
+
     GIVEN("a scan that is cancelled") {
         auto reader = bw64::readFile(path);
         std::atomic<bool> cancel{ true };
@@ -887,10 +898,24 @@ SCENARIO("mc.ear.play~ scans an overview of the open file on its own thread") {
             }
         }
 
+        WHEN("another file is opened while the scan may still run, and scanned in turn") {
+            obj.overview(atoms{ symbol("ov"), 10 });
+            obj.open(atoms{ symbol(write_short_fixture()) });    // cancels without waiting
+            REQUIRE(!obj.overview_ready());
+            obj.overview(atoms{ symbol("ov"), 10 });
+            REQUIRE(wait_overview(obj, 5000));
+            obj.flush_overview();
+            THEN("the second scan is of the new file: 0.1 s in one bin") {
+                REQUIRE(obj.last_overview().bins == 1);
+                REQUIRE(obj.last_overview().minimum(0, 0) == Approx(0.25).margin(1e-4));
+            }
+        }
+
         WHEN("the arguments are wrong") {
             obj.overview(atoms{});
             obj.overview(atoms{ symbol("ov"), 0 });
             obj.overview(atoms{ symbol("ov"), symbol("fast") });
+            obj.overview(atoms{ symbol("ov"), 96000 });    // more bins than frames
             THEN("no scan starts") {
                 REQUIRE(!obj.overview_ready());
                 REQUIRE(obj.last_overview().bins == 0);

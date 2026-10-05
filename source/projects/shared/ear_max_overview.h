@@ -24,6 +24,7 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace earmax::admio {
@@ -71,8 +72,15 @@ inline overview compute_overview(bw64::Bw64Reader& reader, double bins_per_secon
     if (frames == 0 || channels == 0 || out.samplerate == 0 || !(bins_per_second > 0.0)) {
         return out;
     }
-    const double frames_per_bin = static_cast<double>(out.samplerate) / bins_per_second;
-    out.bins = static_cast<size_t>(std::ceil(static_cast<double>(frames) / frames_per_bin));
+    // at most one bin per frame, and sizes that fit (a request that would
+    // overflow gives nothing rather than a wrapped allocation)
+    const double frames_per_bin = std::max(1.0, static_cast<double>(out.samplerate) / bins_per_second);
+    const double bins = std::ceil(static_cast<double>(frames) / frames_per_bin);
+    constexpr double k_max_elements = static_cast<double>(std::numeric_limits<size_t>::max() / sizeof(float) / 4);
+    if (!(bins >= 1.0) || bins > static_cast<double>(frames) || bins * static_cast<double>(channels) * 2.0 > k_max_elements) {
+        return overview();
+    }
+    out.bins = static_cast<size_t>(bins);
 
     std::vector<float> minima(out.bins * channels, std::numeric_limits<float>::infinity());
     std::vector<float> maxima(out.bins * channels, -std::numeric_limits<float>::infinity());
@@ -115,24 +123,32 @@ inline overview compute_overview(bw64::Bw64Reader& reader, double bins_per_secon
 
 /// Runs compute_overview() on a thread of its own, opening the file by path
 /// so that a playing stream is not disturbed, and keeps the result for the
-/// main thread to take.
+/// main thread to take. Cancelling never waits for the thread: the scan is
+/// told to stop, its thread is set aside and joined once it has finished
+/// (at the next start, or when the scanner goes).
 class overview_scanner {
 public:
     ~overview_scanner()
     {
         cancel();
+        for (auto& retired : m_retired) {
+            retired.second->cancel.store(true, std::memory_order_release);
+            if (retired.first.joinable()) {
+                retired.first.join();
+            }
+        }
     }
 
-    /// a scan is in progress
+    /// the current scan is in progress
     bool running() const
     {
-        return m_running.load(std::memory_order_acquire);
+        return m_scan && !m_scan->done.load(std::memory_order_acquire);
     }
 
-    /// the result of the last scan waits to be taken
+    /// the result of the current scan waits to be taken
     bool ready() const
     {
-        return m_ready.load(std::memory_order_acquire);
+        return m_scan && !m_scan->taken && m_scan->done.load(std::memory_order_acquire);
     }
 
     /// Start a scan of `path`; `done` is called from the scan thread when
@@ -143,27 +159,24 @@ public:
         if (running()) {
             return false;
         }
-        join();
-        m_cancel.store(false, std::memory_order_release);
-        m_ready.store(false, std::memory_order_release);
-        m_running.store(true, std::memory_order_release);
-        m_buffer = buffer;
-        m_path = path;
-        m_error.clear();
-        m_thread = std::thread([this, path, bins_per_second, done] {
+        retire();
+        auto scan = std::make_shared<state>();
+        scan->path = path;
+        scan->buffer = buffer;
+        m_scan = scan;
+        m_thread = std::thread([scan, bins_per_second, done] {
             try {
-                auto reader = bw64::readFile(path);
-                m_result = compute_overview(*reader, bins_per_second, &m_cancel);
+                auto reader = bw64::readFile(scan->path);
+                scan->result = compute_overview(*reader, bins_per_second, &scan->cancel);
             }
             catch (const std::exception& e) {
-                m_error = e.what();
-                m_result = overview();
+                scan->error = e.what();
+                scan->result = overview();
             }
-            m_ready.store(true, std::memory_order_release);
+            scan->done.store(true, std::memory_order_release);
             if (done) {
                 done();
             }
-            m_running.store(false, std::memory_order_release);
         });
         return true;
     }
@@ -172,50 +185,78 @@ public:
     /// says why the scan produced nothing when it did not.
     overview take(std::string& error)
     {
-        join();
-        m_ready.store(false, std::memory_order_release);
-        error = m_error;
-        return std::move(m_result);
+        if (!ready()) {
+            error.clear();
+            return overview();
+        }
+        m_scan->taken = true;
+        if (m_thread.joinable()) {
+            m_thread.join();    // done: returns at once
+        }
+        error = m_scan->error;
+        return std::move(m_scan->result);
     }
 
-    /// the buffer~ the running or last scan is for
+    /// the buffer~ the current scan is for
     const std::string& buffer() const
     {
-        return m_buffer;
+        static const std::string none;
+        return m_scan ? m_scan->buffer : none;
     }
 
-    /// the file the running or last scan is of
+    /// the file the current scan is of
     const std::string& path() const
     {
-        return m_path;
+        static const std::string none;
+        return m_scan ? m_scan->path : none;
     }
 
-    /// Stop a running scan, wait for its thread and drop its result: after
-    /// this nothing is ready (the file is being replaced, say).
+    /// Drop the current scan: a running one is told to stop (it ends after
+    /// the chunk it is reading) and its thread set aside; nothing is ready
+    /// afterwards. Never waits.
     void cancel()
     {
-        m_cancel.store(true, std::memory_order_release);
-        join();
-        m_ready.store(false, std::memory_order_release);
-        m_result = overview();
+        if (m_scan) {
+            m_scan->cancel.store(true, std::memory_order_release);
+            m_scan->taken = true;
+        }
+        retire();
+        m_scan.reset();
     }
 
 private:
-    void join()
+    struct state {
+        std::atomic<bool> cancel{ false };
+        std::atomic<bool> done{ false };
+        bool taken{ false };    // main thread only
+        overview result;
+        std::string error;
+        std::string path;
+        std::string buffer;
+    };
+
+    /// set the current thread aside and join the set-aside threads that have finished
+    void retire()
     {
         if (m_thread.joinable()) {
-            m_thread.join();
+            m_retired.emplace_back(std::move(m_thread), m_scan);
+        }
+        for (auto it = m_retired.begin(); it != m_retired.end();) {
+            if (!it->second || it->second->done.load(std::memory_order_acquire)) {
+                if (it->first.joinable()) {
+                    it->first.join();
+                }
+                it = m_retired.erase(it);
+            }
+            else {
+                ++it;
+            }
         }
     }
 
     std::thread m_thread;
-    std::atomic<bool> m_running{ false };
-    std::atomic<bool> m_ready{ false };
-    std::atomic<bool> m_cancel{ false };
-    overview m_result;
-    std::string m_error;
-    std::string m_buffer;
-    std::string m_path;
+    std::shared_ptr<state> m_scan;
+    std::vector<std::pair<std::thread, std::shared_ptr<state>>> m_retired;
 };
 
 /// Writes an overview into a named buffer~ (main thread): the buffer is

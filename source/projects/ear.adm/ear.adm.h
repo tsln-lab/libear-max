@@ -609,6 +609,10 @@ private:
             cerr << "overview: no file read" << endl;
             return;
         }
+        if (bins_per_second > static_cast<double>(m_player.info().samplerate)) {
+            cerr << "overview: at most one bin per frame (" << m_player.info().samplerate << " bins per second)" << endl;
+            return;
+        }
         if (m_scanner.running()) {
             cerr << "overview: a scan is already running" << endl;
             return;
