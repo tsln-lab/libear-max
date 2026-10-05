@@ -876,6 +876,17 @@ SCENARIO("mc.ear.play~ scans an overview of the open file on its own thread") {
             }
         }
 
+        WHEN("another file is opened before the result is taken") {
+            obj.overview(atoms{ symbol("ov"), 10 });
+            REQUIRE(wait_overview(obj, 5000));
+            obj.open(atoms{ symbol(write_short_fixture()) });
+            obj.flush_overview();
+            THEN("the scan of the previous file is dropped") {
+                REQUIRE(!obj.overview_ready());
+                REQUIRE(obj.last_overview().bins == 0);
+            }
+        }
+
         WHEN("the arguments are wrong") {
             obj.overview(atoms{});
             obj.overview(atoms{ symbol("ov"), 0 });

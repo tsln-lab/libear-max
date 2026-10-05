@@ -148,6 +148,7 @@ public:
         m_ready.store(false, std::memory_order_release);
         m_running.store(true, std::memory_order_release);
         m_buffer = buffer;
+        m_path = path;
         m_error.clear();
         m_thread = std::thread([this, path, bins_per_second, done] {
             try {
@@ -183,11 +184,20 @@ public:
         return m_buffer;
     }
 
-    /// stop a running scan and wait for its thread
+    /// the file the running or last scan is of
+    const std::string& path() const
+    {
+        return m_path;
+    }
+
+    /// Stop a running scan, wait for its thread and drop its result: after
+    /// this nothing is ready (the file is being replaced, say).
     void cancel()
     {
         m_cancel.store(true, std::memory_order_release);
         join();
+        m_ready.store(false, std::memory_order_release);
+        m_result = overview();
     }
 
 private:
@@ -205,6 +215,7 @@ private:
     overview m_result;
     std::string m_error;
     std::string m_buffer;
+    std::string m_path;
 };
 
 /// Writes an overview into a named buffer~ (main thread): the buffer is

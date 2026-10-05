@@ -621,6 +621,13 @@ private:
         if (!m_scanner.ready()) {
             return;
         }
+        if (!m_player.loaded() || m_scanner.path() != m_player.info().path) {
+            // the file changed while the scan ran (open cancels a running
+            // scan, but a finished one may still be queued)
+            std::string ignored;
+            m_scanner.take(ignored);
+            return;
+        }
         std::string error;
         m_last_overview = m_scanner.take(error);
         if (!error.empty()) {
@@ -694,6 +701,7 @@ private:
 
     void load(const std::string& path)
     {
+        m_scanner.cancel();    // an overview of the previous file is not wanted
         m_running = false;
         if (m_timer) {
                 m_timer->stop();

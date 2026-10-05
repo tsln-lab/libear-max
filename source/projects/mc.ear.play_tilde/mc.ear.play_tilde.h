@@ -401,6 +401,13 @@ private:
         if (!m_scanner.ready()) {
             return;
         }
+        if (!m_player.loaded() || m_scanner.path() != m_player.info().path) {
+            // the file changed while the scan ran (open cancels a running
+            // scan, but a finished one may still be queued)
+            std::string ignored;
+            m_scanner.take(ignored);
+            return;
+        }
         std::string error;
         m_last_overview = m_scanner.take(error);
         if (!error.empty()) {
@@ -457,6 +464,7 @@ private:
 
     void open_file(const std::string& path)
     {
+        m_scanner.cancel();    // an overview of the previous file is not wanted
         m_playing.store(false, std::memory_order_release);
         m_next_boundary.store(admio::bw64_stream::k_no_frame);
         std::unique_ptr<bw64::Bw64Reader> reader;

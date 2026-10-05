@@ -60,11 +60,12 @@ by default. The buffer's sample rate is set to twice the bins per second, so
 its time axis is the file's own: `waveform~` zoomed out draws each pixel
 column from the lowest to the highest sample it covers, which is the
 min-to-max envelope of the bins, and `position` from the info outlet (in
-milliseconds) drives a playhead on the same scale. `overview name channels
-bins bins-per-second` is reported on the info outlet when the buffer is
-written. For a stacked view, one `waveform~` per track with `chanoffset`
-set to the track reads the same buffer; the `object n track ...` and
-`directspeakers n track ...` reports say which track is which.
+milliseconds), sent as `line ms`, drives the playhead on the same scale.
+`overview name channels bins bins-per-second` is reported on the info outlet
+when the buffer is written. For a stacked view, one `waveform~` per track
+with `chanoffset` set to the track (1 for the first) reads the same buffer;
+the `object n track ...` and `directspeakers n track ...` reports say which
+track is which.
 
 ```
 [buffer~ ov]        [open file.wav( [overview ov 100(
@@ -72,7 +73,9 @@ set to the track reads the same buffer; the `object n track ...` and
                     [mc.ear.play~]
                                   |
                                  [route overview position]
-                                  |
-                   [waveform~ @chanoffset 0]   (set ov; the position in ms)
+                                  |          |
+                                 [set ov(   [prepend line]
+                                  |          |
+                                 [waveform~ @chanoffset 1]
 ```
 
