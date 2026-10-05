@@ -110,6 +110,17 @@ reading `ear.adm` or `mc.ear.play~` can be fed straight into these messages
 through `[prepend direct]` and `[prepend hoa]` to copy a file's bed and
 scene.
 
+## Waveform overview
+
+`overview name [bins per second]` writes a waveform overview of the read
+file into the `buffer~` called `name` for `waveform~`, as
+[`mc.ear.play~`](/libear-max/adm/mc-ear-play/#waveform-overview) does: one
+channel per file track, two samples per bin (the lowest then the highest
+sample), at a sample rate of twice the bins per second so that the buffer
+runs on the file's timeline. The scan runs on a thread of its own and
+`overview name channels bins bins-per-second` is reported on the info outlet
+when the buffer is written.
+
 ## Limitations
 
 Limitations of this first version: muted objects, silent tracks, tracks missing

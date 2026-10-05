@@ -48,3 +48,34 @@ transport, `position` and the metadata stay on the file's own clock.
 |   +---------------------- [mc.ear.direct~ 4+5+0]
 +-------------------------- [mc.ear.objects~ 4+5+0]
 ```
+
+## Waveform overview
+
+`overview name [bins per second]` draws the file: it is scanned once on a
+thread of its own (the playback is not disturbed, and the file never comes
+into memory as a whole, so a master of any size works) and the result goes
+into the `buffer~` called `name`, one channel per file track and two samples
+per bin, the lowest then the highest sample of the bin, 100 bins per second
+by default. The buffer's sample rate is set to twice the bins per second, so
+its time axis is the file's own: `waveform~` zoomed out draws each pixel
+column from the lowest to the highest sample it covers, which is the
+min-to-max envelope of the bins, and `position` from the info outlet (in
+milliseconds), sent as `line ms`, drives the playhead on the same scale.
+`overview name channels bins bins-per-second` is reported on the info outlet
+when the buffer is written. For a stacked view, one `waveform~` per track
+with `chanoffset` set to the track (1 for the first) reads the same buffer;
+the `object n track ...` and `directspeakers n track ...` reports say which
+track is which.
+
+```
+[buffer~ ov]        [open file.wav( [overview ov 100(
+                     |
+                    [mc.ear.play~]
+                                  |
+                                 [route overview position]
+                                  |          |
+                                 [set ov(   [prepend line]
+                                  |          |
+                                 [waveform~ @chanoffset 1]
+```
+
