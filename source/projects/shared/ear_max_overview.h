@@ -17,11 +17,13 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <functional>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <utility>
@@ -123,20 +125,21 @@ inline overview compute_overview(bw64::Bw64Reader& reader, double bins_per_secon
 
 /// Runs compute_overview() on a thread of its own, opening the file by path
 /// so that a playing stream is not disturbed, and keeps the result for the
-/// main thread to take. Cancelling never waits for the thread: the scan is
-/// told to stop, its thread is set aside and joined once it has finished
-/// (at the next start, or when the scanner goes).
+/// main thread to take. Nothing here waits on the file: cancelling tells
+/// the scan to stop and sets its thread aside, set-aside threads are
+/// joined once their scan has finished, and when the scanner goes a
+/// thread still reading is disarmed (its completion callback cleared
+/// under a lock, so it can never call into a destroyed object) and let
+/// finish on its own after a short grace period.
 class overview_scanner {
 public:
     ~overview_scanner()
     {
         cancel();
         for (auto& retired : m_retired) {
-            retired.second->cancel.store(true, std::memory_order_release);
-            if (retired.first.joinable()) {
-                retired.first.join();
-            }
+            release(retired.first, retired.second);
         }
+        m_retired.clear();
     }
 
     /// the current scan is in progress
@@ -163,8 +166,9 @@ public:
         auto scan = std::make_shared<state>();
         scan->path = path;
         scan->buffer = buffer;
+        scan->on_done = std::move(done);
         m_scan = scan;
-        m_thread = std::thread([scan, bins_per_second, done] {
+        m_thread = std::thread([scan, bins_per_second] {
             try {
                 auto reader = bw64::readFile(scan->path);
                 scan->result = compute_overview(*reader, bins_per_second, &scan->cancel);
@@ -174,8 +178,9 @@ public:
                 scan->result = overview();
             }
             scan->done.store(true, std::memory_order_release);
-            if (done) {
-                done();
+            std::lock_guard<std::mutex> lock(scan->callback_mutex);
+            if (scan->on_done) {
+                scan->on_done();
             }
         });
         return true;
@@ -233,6 +238,8 @@ private:
         std::string error;
         std::string path;
         std::string buffer;
+        std::mutex callback_mutex;
+        std::function<void()> on_done;    // cleared when the owner goes
     };
 
     /// set the current thread aside and join the set-aside threads that have finished
@@ -251,6 +258,32 @@ private:
             else {
                 ++it;
             }
+        }
+    }
+
+    /// Let go of a set-aside thread without waiting on its reads: its
+    /// callback is cleared so it cannot reach the owner any more, then it
+    /// is joined if it finishes within a short grace period (one chunk at
+    /// most, normally) and detached otherwise to finish on its own.
+    static void release(std::thread& thread, const std::shared_ptr<state>& scan)
+    {
+        if (scan) {
+            scan->cancel.store(true, std::memory_order_release);
+            std::lock_guard<std::mutex> lock(scan->callback_mutex);
+            scan->on_done = nullptr;
+        }
+        if (!thread.joinable()) {
+            return;
+        }
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
+        while (scan && !scan->done.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        if (!scan || scan->done.load(std::memory_order_acquire)) {
+            thread.join();
+        }
+        else {
+            thread.detach();
         }
     }
 
