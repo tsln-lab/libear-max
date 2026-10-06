@@ -26,11 +26,9 @@ export default defineConfig({
         {
           label: 'Objects',
           items: [
-            { label: 'ear.objects and ear.objects~', slug: 'objects/ear-objects' },
-            { label: 'mc.ear.objects~ and mc.ear.direct~', slug: 'objects/mc-ear-objects' },
-            { label: 'ear.direct', slug: 'objects/ear-direct' },
-            { label: 'mc.ear.hoa~', slug: 'objects/mc-ear-hoa' },
-            { label: 'ear.hoa', slug: 'objects/ear-hoa' },
+            { label: 'ear.objects, ear.objects~ and mc.ear.objects~', slug: 'objects/ear-objects' },
+            { label: 'ear.direct and mc.ear.direct~', slug: 'objects/ear-direct' },
+            { label: 'ear.hoa and mc.ear.hoa~', slug: 'objects/ear-hoa' },
             { label: 'mc.ear.encode~', slug: 'objects/mc-ear-encode' },
             { label: 'Mixing beds, objects and scenes', slug: 'objects/mixing' },
           ],
@@ -39,9 +37,9 @@ export default defineConfig({
           label: 'ADM files',
           items: [
             { label: 'ear.adm and mc.ear.select~', slug: 'adm/ear-adm' },
-            { label: 'Dolby Atmos masters', slug: 'adm/dolby-atmos' },
             { label: 'mc.ear.play~', slug: 'adm/mc-ear-play' },
             { label: 'mc.ear.record~', slug: 'adm/mc-ear-record' },
+            { label: 'Dolby Atmos masters', slug: 'adm/dolby-atmos' },
             { label: 'The ADM test corpus', slug: 'adm/test-corpus' },
           ],
         },
