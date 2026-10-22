@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/tsln-lab/libear-max/compare/v1.4.0...v1.5.0) (2026-10-22)
+
+
+### Features
+
+* add mc.ear.decorrelate~, the BS.2127 decorrelation filters as an effect ([#38](https://github.com/tsln-lab/libear-max/issues/38)) ([1c3eb91](https://github.com/tsln-lab/libear-max/commit/1c3eb91b37ebecf26dac19415ff8fe57b38c94a6))
+
 ## [1.4.0](https://github.com/tsln-lab/libear-max/compare/v1.3.0...v1.4.0) (2026-10-05)
 
 
