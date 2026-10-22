@@ -30,6 +30,7 @@ export default defineConfig({
             { label: 'ear.direct and mc.ear.direct~', slug: 'objects/ear-direct' },
             { label: 'ear.hoa and mc.ear.hoa~', slug: 'objects/ear-hoa' },
             { label: 'mc.ear.encode~', slug: 'objects/mc-ear-encode' },
+            { label: 'mc.ear.decorrelate~', slug: 'objects/mc-ear-decorrelate' },
             { label: 'Mixing beds, objects and scenes', slug: 'objects/mixing' },
           ],
         },

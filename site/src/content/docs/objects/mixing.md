@@ -12,4 +12,7 @@ samples; by default `mc.ear.direct~` and `mc.ear.hoa~` delay their output by
 the same amount (`@align 1`), which is what the reference does, so beds,
 scenes and objects stay time-aligned. Set `@align 0` for zero latency when no
 decorrelating renderer is mixed in, or set `@decorrelate 0` on the object
-renderer instead.
+renderer instead. The reference never decorrelates beds or scenes; to widen
+a bed the way diffuse objects are rendered, pass it through
+[`mc.ear.decorrelate~`](/libear-max/objects/mc-ear-decorrelate/) with the
+same layout, whose filters are the renderers' own.
