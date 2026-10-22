@@ -181,11 +181,17 @@ SCENARIO("mc.ear.decorrelate~ seeds the filters by channel number without a layo
         REQUIRE(obj.channel_count() == 2);
 
         WHEN("the input carries six channels") {
-            REQUIRE(obj.mc_input_changed(0, 6) == 0);
-            THEN("the count follows it") {
+            REQUIRE(obj.mc_input_changed(0, 6) != 0);
+            THEN("the count follows it and the change is reported to Max") {
                 REQUIRE(obj.channel_count() == 6);
                 REQUIRE(static_cast<int>(obj.chans) == 6);
                 REQUIRE(obj.mc_output_channels(0) == 6);
+            }
+            AND_WHEN("the input shrinks again") {
+                REQUIRE(obj.mc_input_changed(0, 2) == 0);
+                THEN("the count keeps its high mark") {
+                    REQUIRE(obj.channel_count() == 6);
+                }
             }
         }
 
@@ -207,7 +213,7 @@ SCENARIO("mc.ear.decorrelate~ seeds the filters by channel number without a layo
 
         WHEN("more channels than can be allocated are connected") {
             stderr_capture console;
-            REQUIRE(obj.mc_input_changed(0, 2000) == 0);
+            REQUIRE(obj.mc_input_changed(0, 2000) != 0);
             THEN("the count stops at the cap and the excess is reported") {
                 REQUIRE(obj.channel_count() == k_max_mc_inputs);
                 REQUIRE(console.text.str().find("2000 channels") != std::string::npos);

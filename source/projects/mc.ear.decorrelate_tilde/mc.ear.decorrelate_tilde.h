@@ -99,19 +99,8 @@ public:
     // attributes
     // ------------------------------------------------------------------
 
-    attribute<symbol> layout{ this, "layout", k_no_layout,
-        description{ "ITU-R BS.2051 layout whose loudspeakers seed the filters (give it as argument): channel n gets "
-                     "the filter the object renderers apply on loudspeaker n of that layout, and the channel count "
-                     "is the layout's. 'none' (the default) seeds channel n by n and takes the count from chans. "
-                     "A change takes effect when the audio is restarted." },
-        setter{ MIN_FUNCTION {
-            const std::string name = args[0];
-            if (!apply_layout(name)) {
-                return { symbol(m_by_layout ? m_layout.name() : std::string(k_no_layout)) };
-            }
-            return { symbol(name) };
-        } } };
-
+    // chans comes first: Min applies each attribute's default through its setter as the attribute is
+    // constructed, in declaration order, and the layout setter reads chans
     attribute<int> chans{ this, "chans", 2,
         description{ "Number of channels without a layout, 1 to 1024 (with a layout the count is the layout's). It "
                      "grows by itself when the input signal carries more channels; a new count takes effect when the "
@@ -127,6 +116,19 @@ public:
             }
             m_count = static_cast<size_t>(n);
             return { n };
+        } } };
+
+    attribute<symbol> layout{ this, "layout", k_no_layout,
+        description{ "ITU-R BS.2051 layout whose loudspeakers seed the filters (give it as argument): channel n gets "
+                     "the filter the object renderers apply on loudspeaker n of that layout, and the channel count "
+                     "is the layout's. 'none' (the default) seeds channel n by n and takes the count from chans. "
+                     "A change takes effect when the audio is restarted." },
+        setter{ MIN_FUNCTION {
+            const std::string name = args[0];
+            if (!apply_layout(name)) {
+                return { symbol(m_by_layout ? m_layout.name() : std::string(k_no_layout)) };
+            }
+            return { symbol(name) };
         } } };
 
     attribute<number> diffuse{ this, "diffuse", 1.0,
@@ -202,15 +204,16 @@ public:
         if (!m_by_layout) {
             // the count follows the input signal, as Max's mc objects do
             const size_t n = std::min(static_cast<size_t>(std::max(1L, channels)), k_max_mc_inputs);
-            if (n > m_count) {
-                cout << "chans raised from " << m_count << " to " << n
-                     << "; the new channels take effect when the audio is restarted" << endl;
-                chans = static_cast<int>(n);
-            }
             if (channels > static_cast<long>(k_max_mc_inputs) && channels != m_reported_mismatch) {
                 m_reported_mismatch = channels;
                 cerr << "input has " << channels << " channels but at most " << k_max_mc_inputs
                      << " can be allocated; extra channels are ignored" << endl;
+            }
+            if (n > m_count) {
+                cout << "chans raised from " << m_count << " to " << n
+                     << "; the new channels take effect when the audio is restarted" << endl;
+                chans = static_cast<int>(n);
+                return 1;    // the output count changed with it; Max asks for it again
             }
         }
         else if (channels != 1 && channels != static_cast<long>(m_count) && channels != m_reported_mismatch) {
