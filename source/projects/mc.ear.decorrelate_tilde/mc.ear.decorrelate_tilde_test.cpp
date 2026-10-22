@@ -85,6 +85,13 @@ std::vector<std::vector<double>> impulse_response(mc_ear_decorrelate_tilde& obj,
     return response;
 }
 
+/// the layout attribute as text
+std::string layout_of(mc_ear_decorrelate_tilde& obj)
+{
+    const symbol value = obj.layout;
+    return value;
+}
+
 double energy(const std::vector<double>& samples)
 {
     double sum = 0.0;
@@ -110,6 +117,7 @@ SCENARIO("mc.ear.decorrelate~ applies the EAR's decorrelation filter of each lou
         test_wrapper_args<mc_ear_decorrelate_tilde> an_instance(atoms{ symbol("0+5+0") });
         mc_ear_decorrelate_tilde& obj = an_instance;
         REQUIRE(obj.by_layout());
+        REQUIRE(layout_of(obj) == "0+5+0");
         REQUIRE(obj.channel_count() == k_channels_050);
         REQUIRE(obj.mc_output_channels(0) == static_cast<long>(k_channels_050));
         REQUIRE(obj.latency() == ear::decorrelatorCompensationDelay());
@@ -213,6 +221,7 @@ SCENARIO("mc.ear.decorrelate~ seeds the filters by channel number without a layo
         mc_ear_decorrelate_tilde& obj = an_instance;
         THEN("it is refused and the filters are seeded by channel number") {
             REQUIRE(!obj.by_layout());
+            REQUIRE(layout_of(obj) == "none");
             REQUIRE(console.text.str().find("known layouts") != std::string::npos);
         }
     }

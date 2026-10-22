@@ -89,9 +89,7 @@ public:
                 if (!name.empty() && name[0] == '@') {
                     break;
                 }
-                if (!apply_layout(name)) {
-                    apply_layout(k_no_layout);
-                }
+                layout = symbol(name);    // the setter applies it, or keeps none when it is unknown
                 break;
             }
         }

@@ -15,4 +15,6 @@ decorrelating renderer is mixed in, or set `@decorrelate 0` on the object
 renderer instead. The reference never decorrelates beds or scenes; to widen
 a bed the way diffuse objects are rendered, pass it through
 [`mc.ear.decorrelate~`](/libear-max/objects/mc-ear-decorrelate/) with the
-same layout, whose filters are the renderers' own.
+same layout, whose filters are the renderers' own, with `@align 0` on the
+bed renderer: the decorrelator delays the bed by the same 255 samples
+itself, so the two delays must not add up.

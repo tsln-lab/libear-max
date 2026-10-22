@@ -50,8 +50,14 @@ changing the mix never leaves one without history. With `@diffuse 0` the
 object is a plain 255-sample delay, which is also how to align anything else
 with a decorrelating renderer.
 
+The delay counts once: a bed renderer feeding `mc.ear.decorrelate~` must
+have its own alignment off (`mc.ear.direct~ 4+5+0 @align 0`), since the
+decorrelator already delays the bed by the 255 samples the object renderers
+are late by. With both on, the bed reaches the sum 255 samples after the
+objects.
+
 ```
-[mc.ear.direct~ 4+5+0]          [mc.ear.objects~ 4+5+0]
+[mc.ear.direct~ 4+5+0 @align 0] [mc.ear.objects~ 4+5+0]
 |                                |
 [mc.ear.decorrelate~ 4+5+0 @diffuse 0.5]
 |                                |
