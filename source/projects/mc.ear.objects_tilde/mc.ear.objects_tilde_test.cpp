@@ -301,4 +301,64 @@ SCENARIO("mc.ear.objects~ grows its allocation when a message or the input addre
     }
 }
 
+SCENARIO("mc.ear.objects~ takes a new layout at any time") {
+    ext_main(nullptr);
+
+    // 4+5+0 channel order: M+030 M-030 M+000 LFE1 M+110 M-110 U+030 U-030 U+110 U-110
+    constexpr size_t k_channels_450 = 10;
+
+    GIVEN("an instance created without a layout argument") {
+        test_wrapper_args<mc_ear_objects_tilde> an_instance(atoms{});
+        mc_ear_objects_tilde& obj = an_instance;
+        REQUIRE(obj.layout == symbol("0+5+0"));
+
+        WHEN("the layout attribute is set, as @layout does at creation") {
+            obj.layout = "4+5+0";
+            THEN("the layout, the gains and the output channel count follow") {
+                REQUIRE(obj.layout == symbol("4+5+0"));
+                REQUIRE(obj.channel_count() == k_channels_450);
+                REQUIRE(obj.mc_output_channels(0) == static_cast<long>(k_channels_450));
+                REQUIRE(obj.direct_gains(0).size() == k_channels_450);
+                REQUIRE(obj.direct_gains(15).size() == k_channels_450);
+                REQUIRE(obj.direct_gains(0)[k_m000] == Approx(1.0));
+            }
+        }
+
+        WHEN("an unknown layout is set") {
+            obj.layout = "nope";
+            THEN("the layout is kept") {
+                REQUIRE(obj.layout == symbol("0+5+0"));
+                REQUIRE(obj.channel_count() == k_channels_050);
+            }
+        }
+
+        WHEN("the layout changes while the audio runs") {
+            obj.vector_size(k_block);
+            obj.samplerate(48000.0);
+            obj.decorrelate = false;
+            obj.ramp = 0.0;
+            obj.dspsetup(atoms{ 48000.0, k_block });
+
+            obj.layout = "4+5+0";
+            obj.setvalue(atoms{ 1, symbol("azimuth"), 30.0 });
+
+            mc_audio_io before(1, k_channels_050, k_block);
+            std::fill(before.ins[0].begin(), before.ins[0].end(), 1.0);
+            obj(before.input(), before.output());
+
+            obj.dspsetup(atoms{ 48000.0, k_block });
+            mc_audio_io after(1, k_channels_450, k_block);
+            std::fill(after.ins[0].begin(), after.ins[0].end(), 1.0);
+            obj(after.input(), after.output());
+
+            THEN("the old layout renders until the audio chain is rebuilt, then the new one") {
+                REQUIRE(before.outs[k_m000][k_block - 1] == Approx(1.0));
+                REQUIRE(before.outs[k_m030][k_block - 1] == Approx(0.0).margin(1e-9));
+                REQUIRE(after.outs[k_m030][k_block - 1] == Approx(1.0));
+                REQUIRE(after.outs[k_m000][k_block - 1] == Approx(0.0).margin(1e-9));
+            }
+        }
+    }
+}
+
 EARMAX_TEST_GENERATE_MAXREF(mc_ear_objects_tilde, "mc.ear.objects~")

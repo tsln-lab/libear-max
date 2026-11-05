@@ -268,4 +268,41 @@ SCENARIO("mc.ear.hoa~ decodes an ambisonic scene to a multichannel loudspeaker s
     }
 }
 
+SCENARIO("mc.ear.hoa~ takes a new layout at any time") {
+    ext_main(nullptr);
+
+    constexpr size_t k_channels_450 = 10;
+
+    GIVEN("a first-order instance decoding to 0+5+0 with the audio running") {
+        test_wrapper_args<mc_ear_hoa_tilde> an_instance(atoms{ symbol("0+5+0") });
+        mc_ear_hoa_tilde& obj = an_instance;
+        obj.vector_size(k_block);
+        obj.samplerate(48000.0);
+        obj.align = false;
+        obj.ramp = 0.0;
+        obj.dspsetup(atoms{ 48000.0, k_block });
+
+        WHEN("the layout changes to 4+5+0 and the audio chain is rebuilt") {
+            obj.layout = "4+5+0";
+            THEN("the layout, the decoding matrix and the output channel count follow") {
+                REQUIRE(obj.layout == symbol("4+5+0"));
+                REQUIRE(obj.channel_count() == k_channels_450);
+                REQUIRE(obj.mc_output_channels(0) == static_cast<long>(k_channels_450));
+                REQUIRE(obj.gains(k_w).size() == k_channels_450);
+            }
+
+            obj.dspsetup(atoms{ 48000.0, k_block });
+            mc_audio_io io(4, k_channels_450, k_block);
+            std::fill(io.ins[k_w].begin(), io.ins[k_w].end(), 1.0);
+            obj(io.input(), io.output());
+            THEN("W is decoded with the new matrix on every loudspeaker") {
+                for (size_t s = 0; s < k_channels_450; ++s) {
+                    REQUIRE(io.outs[s][k_block - 1] == Approx(obj.gains(k_w)[s]).margin(1e-6));
+                }
+                REQUIRE(std::abs(io.outs[6][k_block - 1]) > 1e-3);    // U+030 exists only in 4+5+0
+            }
+        }
+    }
+}
+
 EARMAX_TEST_GENERATE_MAXREF(mc_ear_hoa_tilde, "mc.ear.hoa~")

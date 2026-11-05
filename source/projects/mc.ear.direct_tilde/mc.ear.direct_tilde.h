@@ -42,6 +42,7 @@ private:
     std::vector<float> m_silence;
     long m_reported_overflow{ 0 };
     bus_renderer m_bus;
+    std::string m_dsp_layout;    // the layout the bus was configured for at the last dspsetup
 
 public:
     inlet<> in_main{ this, "(multichannelsignal) bed audio, one channel per DirectSpeakers channel; (setvalue/applyvalues/inputlayout) metadata" };
@@ -50,14 +51,8 @@ public:
     mc_ear_direct_tilde(const atoms& args = {})
     {
         const std::string name = layout_from_args(args);
-        if (!apply_layout(name)) {
-            apply_layout(k_default_layout);
-        }
-        resize_channels(static_cast<size_t>(static_cast<int>(chans)));
-        // the chans attribute allocated the slots before the gain calculator
-        // existed, so calculate the initial gains now
-        for (size_t i = 0; i < m_channels.size(); ++i) {
-            update(i);
+        if (name != m_layout.name()) {
+            layout = symbol(name);    // the setter applies it, or keeps the default when it is unknown
         }
     }
 
@@ -66,11 +61,25 @@ public:
     // ------------------------------------------------------------------
 
     attribute<symbol> layout{ this, "layout", k_default_layout,
-        description{ "ITU-R BS.2051 output layout name, fixed at creation (give it as argument)." },
+        description{ "ITU-R BS.2051 output layout name (the argument, or @layout). It can be changed at any time: "
+                     "the gains are recalculated and the output takes the new channel count, the audio chain being "
+                     "rebuilt when it is running." },
         setter{ MIN_FUNCTION {
             const std::string name = args[0];
-            if (m_calc && name != m_layout.name()) {
-                cerr << "layout cannot be changed after creation; create a new object with the layout as argument" << endl;
+            if (m_calc && name == m_layout.name()) {
+                return args;
+            }
+            if (!apply_layout(name)) {
+                if (!m_calc) {
+                    apply_layout(k_default_layout);
+                }
+                return { symbol(m_layout.name()) };
+            }
+            for (size_t i = 0; i < m_channels.size(); ++i) {
+                update(i);
+            }
+            if (initialized()) {
+                mc_rebuild_dsp(maxobj());
             }
             return { symbol(m_layout.name()) };
         } } };
@@ -210,6 +219,7 @@ public:
     message<> dspsetup{ this, "dspsetup",
         MIN_FUNCTION {
             m_bus.configure(m_layout, m_channels.size(), static_cast<size_t>(vector_size()), samplerate(), false, true);
+            m_dsp_layout = m_layout.name();
             m_bus.set_delay_compensation(static_cast<bool>(align));
             for (size_t i = 0; i < m_channels.size(); ++i) {
                 m_bus.set_gains_now(i, m_channels[i].gains, m_silence);
@@ -336,7 +346,9 @@ private:
             })) {
             return;
         }
-        if (initialized()) {
+        // after a layout change the bus keeps the old layout until the next
+        // dspsetup, which publishes these gains
+        if (initialized() && m_dsp_layout == m_layout.name()) {
             m_bus.set_targets(i, slot.gains, m_silence);
         }
     }

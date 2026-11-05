@@ -37,6 +37,13 @@ t_max_err object_method_typed(void*, t_symbol*, long, t_atom*, t_atom*)
 {
     return 0;
 }
+// nor a dspchain to rebuild after a layout change (ear_max_mc.h): the tests
+// call dspsetup themselves
+t_dspchain* dspchain_fromobject(t_object*)
+{
+    return nullptr;
+}
+void dspchain_setbroken(t_dspchain*) {}
 } // namespace c74::max
 
 namespace earmax_test {
