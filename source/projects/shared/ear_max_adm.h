@@ -997,6 +997,32 @@ struct captured_programme {
     }
 };
 
+/// The source channel written on each track of a file, for audio that comes
+/// as the objects, then the bed's channels, then the rest (the input of
+/// mc.ear.record~, the audio ear.adm's 'write' copies): entry t is the
+/// source channel of track t + 1. The same order, except that the Dolby
+/// profile puts the bed first, as Dolby Atmos masters do: the bed on tracks
+/// 1..N, the objects after it, then the rest. `total` is the number of
+/// channels written; objects and bed beyond it are cut as in limit().
+inline std::vector<size_t> track_sources(adm_profile profile, size_t objects, size_t bed, size_t total)
+{
+    std::vector<size_t> sources(total);
+    for (size_t t = 0; t < total; ++t) {
+        sources[t] = t;
+    }
+    objects = std::min(objects, total);
+    bed = std::min(bed, total - objects);
+    if (profile == adm_profile::dolby && objects > 0 && bed > 0) {
+        for (size_t t = 0; t < bed; ++t) {
+            sources[t] = objects + t;
+        }
+        for (size_t t = 0; t < objects; ++t) {
+            sources[bed + t] = t;
+        }
+    }
+    return sources;
+}
+
 namespace detail {
 
 /// the stream and track formats and the track UID of one PCM channel,
@@ -1531,7 +1557,9 @@ inline const std::vector<std::pair<const char*, std::vector<std::string>>>& dolb
 /// formats, labels and positions, the objects with Cartesian blocks, the
 /// profile's names, timing, references and ids. An HOA scene has no place
 /// in it and is left out, with a warning, as is anything else the profile
-/// cannot carry.
+/// cannot carry. The chna entries put the bed's tracks first, then the
+/// objects', as Dolby Atmos masters do: the audio must be written in the
+/// order track_sources() gives.
 inline std::shared_ptr<adm::Document> build_dolby_document(const captured_programme& captured, double length,
                                                            std::vector<bw64::AudioId>& chna_ids, std::vector<std::string>& warnings,
                                                            audio_format format)
@@ -1653,7 +1681,8 @@ inline std::shared_ptr<adm::Document> build_dolby_document(const captured_progra
         elements.push_back(e);
     }
     elements.insert(elements.end(), object_elements.begin(), object_elements.end());
-    by_track.insert(by_track.begin(), object_tracks.begin(), object_tracks.end());
+    // the bed's tracks first, then the objects' (see track_sources)
+    by_track.insert(by_track.end(), object_tracks.begin(), object_tracks.end());
 
     assign_dolby_ids(doc, elements);
 
@@ -1672,7 +1701,8 @@ inline std::shared_ptr<adm::Document> build_dolby_document(const captured_progra
 /// track formats and track UID each), a DirectSpeakers audioObject for the
 /// bed and an HOA audioObject for the scene. `length` is the audio length
 /// in seconds (the last block of each object lasts until then). The chna
-/// entries are appended to `chna_ids` in track order: objects, bed, scene.
+/// entries are appended to `chna_ids` in track order: objects, bed, scene
+/// (the Dolby profile: bed, objects; see track_sources).
 /// Things written differently from what was asked are explained in
 /// `warnings` (a bed whose packformat could not be used as a common
 /// definitions layout). With the Dolby profile the document is shaped as
@@ -1847,9 +1877,12 @@ inline std::string to_xml(const std::shared_ptr<adm::Document>& doc)
 /// Write `audio_in` (any WAV/BW64 file) to `out` as a BW64 file carrying the
 /// given ADM document and chna entries. Returns the number of frames written.
 /// With the Dolby profile a file of 4 GB or more is marked RF64 instead of
-/// BW64, as the profile asks.
+/// BW64, as the profile asks. `sources` gives the channel of `audio_in`
+/// copied to each track (see track_sources); empty, or for the tracks it
+/// does not cover, the channels are copied in their order.
 inline uint64_t write_file(const std::string& out, const std::string& audio_in, const std::shared_ptr<adm::Document>& doc,
-                           const std::vector<bw64::AudioId>& chna_ids, adm_profile profile = adm_profile::ebu)
+                           const std::vector<bw64::AudioId>& chna_ids, adm_profile profile = adm_profile::ebu,
+                           const std::vector<size_t>& sources = {})
 {
     auto reader = bw64::readFile(audio_in);
     for (const auto& id : chna_ids) {
@@ -1866,15 +1899,36 @@ inline uint64_t write_file(const std::string& out, const std::string& audio_in, 
     auto writer = bw64::writeFile(out, reader->channels(), reader->sampleRate(), reader->bitDepth(), chna, axml);
     writer->useRf64Id(profile == adm_profile::dolby);
 
+    const size_t channels = reader->channels();
+    std::vector<size_t> order(channels);
+    bool identity = true;
+    for (size_t t = 0; t < channels; ++t) {
+        order[t] = t < sources.size() && sources[t] < channels ? sources[t] : t;
+        identity = identity && order[t] == t;
+    }
+
     const uint64_t block = 4096;
-    std::vector<float> buffer(block * reader->channels());
+    std::vector<float> buffer(block * channels);
+    std::vector<float> reordered(identity ? 0 : block * channels);
     uint64_t total = 0;
     while (true) {
         const uint64_t got = reader->read(buffer.data(), block);
         if (got == 0) {
             break;
         }
-        writer->write(buffer.data(), got);
+        if (identity) {
+            writer->write(buffer.data(), got);
+        }
+        else {
+            for (uint64_t f = 0; f < got; ++f) {
+                const float* in = &buffer[f * channels];
+                float* frame = &reordered[f * channels];
+                for (size_t t = 0; t < channels; ++t) {
+                    frame[t] = in[order[t]];
+                }
+            }
+            writer->write(reordered.data(), got);
+        }
         total += got;
     }
     return total;

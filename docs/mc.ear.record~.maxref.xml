@@ -103,7 +103,7 @@
 				<arg name='profile' optional='0' type='symbol' />
 			</arglist>
 			<digest>Set the profile attribute</digest>
-			<description>Set the <at>profile</at> attribute. Shape of the ADM recorded: 'ebu' (BS.2076 as libadm writes it) or 'dolby' (the Dolby Atmos Master ADM Profile: the bed with Dolby's channel formats, labels and Cartesian positions, the objects with Cartesian blocks, the profile's names, ids and timing; what the profile has no place for, such as an HOA scene, is left out with a warning).</description>
+			<description>Set the <at>profile</at> attribute. Shape of the ADM recorded: 'ebu' (BS.2076 as libadm writes it) or 'dolby' (the Dolby Atmos Master ADM Profile: the bed with Dolby's channel formats, labels and Cartesian positions, the objects with Cartesian blocks, the profile's names, ids and timing, and the bed's tracks first, then the objects', as in a Dolby Atmos master; what the profile has no place for, such as an HOA scene, is left out with a warning). The input order stays the objects, then the bed. Takes effect at the next 'start'.</description>
 		</method>
 		<method name='programmename'>
 			<arglist>
@@ -157,8 +157,8 @@
 			<description>Ambisonic order of the HOA scene recorded on the (order+1)^2 input channels after the bed, in ACN order; -1 for no scene. Also set by 'hoa order N'. Takes effect at the next 'start'. Default: -1.</description>
 		</attribute>
 		<attribute name='profile' get='1' set='1' type='symbol' size='1'>
-			<digest>Shape of the ADM recorded: 'ebu' (BS.2076 as libadm writes it) or 'dolby' (the Dolby Atmos Master ADM Profile: the bed with Dolby's channel formats, labels and Cartesian positions, the objects with Cartesian blocks, the profile's names, ids and timing; what the profile has no place for, such as an HOA scene, is left out with a warning)</digest>
-			<description>Shape of the ADM recorded: 'ebu' (BS.2076 as libadm writes it) or 'dolby' (the Dolby Atmos Master ADM Profile: the bed with Dolby's channel formats, labels and Cartesian positions, the objects with Cartesian blocks, the profile's names, ids and timing; what the profile has no place for, such as an HOA scene, is left out with a warning). Default: ebu.</description>
+			<digest>Shape of the ADM recorded: 'ebu' (BS.2076 as libadm writes it) or 'dolby' (the Dolby Atmos Master ADM Profile: the bed with Dolby's channel formats, labels and Cartesian positions, the objects with Cartesian blocks, the profile's names, ids and timing, and the bed's tracks first, then the objects', as in a Dolby Atmos master; what the profile has no place for, such as an HOA scene, is left out with a warning)</digest>
+			<description>Shape of the ADM recorded: 'ebu' (BS.2076 as libadm writes it) or 'dolby' (the Dolby Atmos Master ADM Profile: the bed with Dolby's channel formats, labels and Cartesian positions, the objects with Cartesian blocks, the profile's names, ids and timing, and the bed's tracks first, then the objects', as in a Dolby Atmos master; what the profile has no place for, such as an HOA scene, is left out with a warning). The input order stays the objects, then the bed. Takes effect at the next 'start'. Default: ebu.</description>
 		</attribute>
 		<attribute name='programmename' get='1' set='1' type='symbol' size='1'>
 			<digest>Name of the audioProgramme written</digest>

@@ -60,6 +60,7 @@ private:
     size_t m_recorded_channels{ 0 };    // channels of the file being recorded (chans at 'start')
     double m_samplerate{ 48000.0 };
     admio::adm_profile m_profile{ admio::adm_profile::ebu };
+    admio::adm_profile m_recorded_profile{ admio::adm_profile::ebu };    // the profile at 'start': the track order follows it
     long m_vector{ 64 };
     long m_in_channels{ 0 };            // channels of the multichannel input, from Max
     long m_reported_overflow{ -1 };
@@ -128,8 +129,9 @@ public:
     attribute<symbol> profile{ this, "profile", "ebu",
         description{ "Shape of the ADM recorded: 'ebu' (BS.2076 as libadm writes it) or 'dolby' (the Dolby Atmos Master ADM "
                      "Profile: the bed with Dolby's channel formats, labels and Cartesian positions, the objects with Cartesian "
-                     "blocks, the profile's names, ids and timing; what the profile has no place for, such as an HOA scene, is left "
-                     "out with a warning)." },
+                     "blocks, the profile's names, ids and timing, and the bed's tracks first, then the objects', as in a Dolby Atmos "
+                     "master; what the profile has no place for, such as an HOA scene, is left out with a warning). The input "
+                     "order stays the objects, then the bed. Takes effect at the next 'start'." },
         setter{ MIN_FUNCTION {
             admio::adm_profile p;
             if (!admio::parse_profile(std::string(args[0]), p)) {
@@ -481,7 +483,7 @@ private:
     {
         admio::captured_programme p;
         p.name = programme_name();
-        p.profile = m_profile;
+        p.profile = m_recorded_profile;
         p.objects = m_capture.objects(m_capture.size());
         p.bed = m_bed.bed();
         p.scene = m_scene.scene();
@@ -516,11 +518,13 @@ private:
             cerr << "start: " << m_recorded_channels << " channels; a BW64 file holds at most 1024 tracks with metadata" << endl;
             return;
         }
+        const auto sources = admio::track_sources(m_profile, m_capture.size(), m_bed.size(), m_recorded_channels);
         if (!m_sink.start(m_path, static_cast<uint16_t>(m_recorded_channels), static_cast<uint32_t>(std::lround(m_samplerate)),
-                          static_cast<uint16_t>(static_cast<int>(bitdepth)))) {
+                          static_cast<uint16_t>(static_cast<int>(bitdepth)), sources)) {
             cerr << "start: could not start the recording" << endl;
             return;
         }
+        m_recorded_profile = m_profile;
         m_capture.begin();
         m_bed.begin();
         out_info.send("recording", symbol(m_path));

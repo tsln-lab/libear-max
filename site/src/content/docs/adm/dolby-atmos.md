@@ -33,7 +33,10 @@ channel formats (`RoomCentricLeft`...), labels and Cartesian positions,
 chosen by its channels' labels (the BS.2051 labels `inputlayout` and a read
 file give, or Dolby's), and should be one of the profile's channel
 configurations in its order: 2.0, 3.0, 5.0, 5.1, 7.0, 7.1, 7.0.2 or 7.1.2
-(L R C LFE Lss Rss Lrs Rrs Lts Rts, Ls Rs for 5.x). The objects get
+(L R C LFE Lss Rss Lrs Rrs Lts Rts, Ls Rs for 5.x). The bed's
+tracks come first in the file, then the objects', as in Dolby's own
+masters; the input of `mc.ear.record~` (and the audio `ear.adm` copies with
+`write`) stays the objects, then the bed. The objects get
 Cartesian blocks (polar positions and extents converted as the EAR does,
 width, depth and height written equal, diffuse 0 or 1), `jumpPosition` 1
 with the profile's 5.208 ms interpolation (0 on the first block) and only

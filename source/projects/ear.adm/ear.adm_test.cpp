@@ -1229,16 +1229,30 @@ SCENARIO("ear.adm writes a Dolby Atmos master") {
             REQUIRE(xml.find("<audioPackFormatIDRef>AP_00031002</audioPackFormatIDRef>", stream) < stream_end);
         }
 
-        THEN("the chna entries are the objects' then the bed's, with the profile's ids") {
+        THEN("the chna entries are the bed's then the objects', as in a Dolby Atmos master, with the profile's ids") {
             REQUIRE(chna_ids.size() == 12);
             REQUIRE(chna_ids[0].trackIndex() == 1);
-            REQUIRE(chna_ids[0].uid() == "ATU_0000000b");
-            REQUIRE(chna_ids[0].trackRef() == "AT_0003100b_01");
-            REQUIRE(chna_ids[0].packRef() == "AP_00031002");
-            REQUIRE(chna_ids[2].trackIndex() == 3);
-            REQUIRE(chna_ids[2].uid() == "ATU_00000001");
-            REQUIRE(chna_ids[2].packRef() == "AP_00011001");
-            REQUIRE(chna_ids[11].uid() == "ATU_0000000a");
+            REQUIRE(chna_ids[0].uid() == "ATU_00000001");
+            REQUIRE(chna_ids[0].packRef() == "AP_00011001");
+            REQUIRE(chna_ids[9].trackIndex() == 10);
+            REQUIRE(chna_ids[9].uid() == "ATU_0000000a");
+            REQUIRE(chna_ids[10].trackIndex() == 11);
+            REQUIRE(chna_ids[10].uid() == "ATU_0000000b");
+            REQUIRE(chna_ids[10].trackRef() == "AT_0003100b_01");
+            REQUIRE(chna_ids[10].packRef() == "AP_00031002");
+            REQUIRE(chna_ids[11].trackIndex() == 12);
+        }
+
+        THEN("the audio is written in the same order: the bed's tracks first, the objects', then the scene's") {
+            const auto sources = admio::track_sources(captured.profile, captured.objects.size(),
+                                                      captured.bed.channels.size(), captured.channels());
+            REQUIRE(sources.size() == 16);
+            REQUIRE(sources[0] == 2);     // the bed's first channel comes after the two objects
+            REQUIRE(sources[9] == 11);
+            REQUIRE(sources[10] == 0);    // then the objects
+            REQUIRE(sources[11] == 1);
+            REQUIRE(sources[12] == 12);   // the scene stays last
+            REQUIRE(sources[15] == 15);
         }
 
         THEN("what the profile cannot carry is reported") {
@@ -1329,6 +1343,15 @@ SCENARIO("ear.adm writes a Dolby Atmos master") {
                     file.read(id, 4);
                     REQUIRE(std::string(id, 4) == "RIFF");    // RF64 only from 4 GB
                 }
+                {
+                    // the audio came as object, bed L, bed R (0.25 0.5 0.75); the bed is written first
+                    auto file = bw64::readFile(out);
+                    std::vector<float> frame(3);
+                    REQUIRE(file->read(frame.data(), 1) == 1);
+                    REQUIRE(frame[0] == Approx(0.5).margin(1e-6));
+                    REQUIRE(frame[1] == Approx(0.75).margin(1e-6));
+                    REQUIRE(frame[2] == Approx(0.25).margin(1e-6));
+                }
                 const auto& items = reader.items();
                 REQUIRE(items.warnings.empty());
                 REQUIRE(items.direct.size() == 2);
@@ -1339,7 +1362,10 @@ SCENARIO("ear.adm writes a Dolby Atmos master") {
                 REQUIRE(items.direct[0].z == Approx(0.0));
                 REQUIRE(items.direct[0].pack_id == "AP_00011001");
                 REQUIRE(items.direct[1].labels == std::vector<std::string>{ "M-030" });
+                REQUIRE(items.direct[0].track == 0);
+                REQUIRE(items.direct[1].track == 1);
                 REQUIRE(items.objects.size() == 1);
+                REQUIRE(items.objects[0].track == 2);
                 REQUIRE(items.objects[0].blocks.size() == 1);
                 REQUIRE(items.objects[0].blocks[0].state.cartesian);
                 REQUIRE(items.objects[0].blocks[0].state.x < 0.0);
