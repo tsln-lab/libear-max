@@ -140,8 +140,8 @@
 			<description>Emit the object metadata for a time position in milliseconds ('time 1500'), as the renderer messages for the blocks active at that time. Only blocks that changed since the last emission are sent.</description>
 		</method>
 		<method name='write'>
-			<digest>Write a BW64 file with the captured metadata as ADM: 'write out.wav in.wav' copies the audio of in.wav (recorded with mc.sfrecord~ for example: one track per object, then the bed's channels, then the HOA components) into out.wav with the chna and axml chunks</digest>
-			<description>Write a BW64 file with the captured metadata as ADM: 'write out.wav in.wav' copies the audio of in.wav (recorded with mc.sfrecord~ for example: one track per object, then the bed's channels, then the HOA components) into out.wav with the chna and axml chunks. Reports 'written path tracks frames'.</description>
+			<digest>Write a BW64 file with the captured metadata as ADM: 'write out.wav in.wav' copies the audio of in.wav (recorded with mc.sfrecord~ for example: one track per object, then the bed's channels, then the HOA components) into out.wav with the chna and axml chunks; with the Dolby profile the bed's tracks are written first, as in a Dolby Atmos master</digest>
+			<description>Write a BW64 file with the captured metadata as ADM: 'write out.wav in.wav' copies the audio of in.wav (recorded with mc.sfrecord~ for example: one track per object, then the bed's channels, then the HOA components) into out.wav with the chna and axml chunks; with the Dolby profile the bed's tracks are written first, as in a Dolby Atmos master. Reports 'written path tracks frames'.</description>
 		</method>
 		<method name='writexml'>
 			<digest>Write the captured metadata as an ADM XML file: 'writexml out.xml [length seconds]' (for inspection, or for tools that take the metadata separately)</digest>

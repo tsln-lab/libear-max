@@ -334,7 +334,8 @@ public:
     message<> write{ this, "write",
         "Write a BW64 file with the captured metadata as ADM: 'write out.wav in.wav' copies the audio of in.wav "
         "(recorded with mc.sfrecord~ for example: one track per object, then the bed's channels, then the HOA "
-        "components) into out.wav with the chna and axml chunks. Reports 'written path tracks frames'.",
+        "components) into out.wav with the chna and axml chunks; with the Dolby profile the bed's tracks are written "
+        "first, as in a Dolby Atmos master. Reports 'written path tracks frames'.",
         MIN_FUNCTION {
             if (args.size() < 2 || !atom_is_symbol(args[0]) || !atom_is_symbol(args[1])) {
                 cerr << "write needs the output path and the path of the recorded audio" << endl;
@@ -355,7 +356,9 @@ public:
                 const admio::audio_format format{ reader->sampleRate(), reader->bitDepth() };
                 auto doc = build(captured, length, chna_ids, format);
                 reader.reset();
-                const uint64_t frames = admio::write_file(out, in, doc, chna_ids, captured.profile);
+                const auto sources = admio::track_sources(captured.profile, captured.objects.size(), captured.bed.channels.size(),
+                                                          captured.channels());
+                const uint64_t frames = admio::write_file(out, in, doc, chna_ids, captured.profile, sources);
                 out_info.send("written", symbol(out), static_cast<int>(captured.channels()), static_cast<double>(frames));
             }
             catch (const std::exception& e) {

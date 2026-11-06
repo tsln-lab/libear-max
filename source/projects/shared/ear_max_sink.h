@@ -92,13 +92,21 @@ public:
 
     /// Start a recording: the file is created by the writer thread, the
     /// audio thread's frames count from now. False when one is in progress.
-    bool start(const std::string& path, uint16_t channels, uint32_t samplerate, uint16_t bitdepth)
+    /// `sources` gives the input channel written on each track (see
+    /// track_sources); empty, or for the tracks it does not cover, the
+    /// input channels are written in their order.
+    bool start(const std::string& path, uint16_t channels, uint32_t samplerate, uint16_t bitdepth,
+               const std::vector<size_t>& sources = {})
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         if (m_recording.load() || m_busy.load()) {
             return false;
         }
         m_channels = channels;
+        m_sources.resize(channels);    // allocated here, never on the audio thread
+        for (size_t t = 0; t < channels; ++t) {
+            m_sources[t] = t < sources.size() ? sources[t] : t;
+        }
         m_samplerate = samplerate;
         m_bitdepth = bitdepth;
         const size_t needed = k_ring_frames * channels;
@@ -176,9 +184,10 @@ public:
 
     // ---- audio thread ------------------------------------------------
 
-    /// Interleave `frames` frames of the input channels into the ring (a
-    /// missing input channel is silent); drops the vector when the ring is
-    /// full. Never blocks, allocates or frees.
+    /// Interleave `frames` frames of the input channels into the ring, in
+    /// the track order given at start (a missing input channel is silent);
+    /// drops the vector when the ring is full. Never blocks, allocates or
+    /// frees.
     void push(double** ins, long in_channels, long frames)
     {
         if (!m_recording.load(std::memory_order_acquire)) {
@@ -198,8 +207,9 @@ public:
         for (long i = 0; i < frames; ++i) {
             const size_t index = static_cast<size_t>((write_total + static_cast<uint64_t>(i)) % k_ring_frames);
             float* frame = &m_ring[index * channels];
-            for (size_t ch = 0; ch < channels; ++ch) {
-                frame[ch] = static_cast<long>(ch) < in_channels ? static_cast<float>(ins[ch][i]) : 0.0f;
+            for (size_t t = 0; t < channels; ++t) {
+                const size_t ch = m_sources[t];
+                frame[t] = static_cast<long>(ch) < in_channels ? static_cast<float>(ins[ch][i]) : 0.0f;
             }
         }
         m_write_total.store(write_total + static_cast<uint64_t>(frames), std::memory_order_release);
@@ -388,6 +398,7 @@ private:
     // the ring (positions atomic; the buffer is sized by start(), before
     // the audio thread pushes)
     std::vector<float> m_ring;    ///< interleaved frames
+    std::vector<size_t> m_sources;    ///< the input channel of each track
     size_t m_channels{ 0 };
     uint32_t m_samplerate{ 48000 };
     uint16_t m_bitdepth{ 24 };

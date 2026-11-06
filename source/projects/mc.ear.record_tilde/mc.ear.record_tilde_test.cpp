@@ -455,6 +455,42 @@ SCENARIO("mc.ear.record~ records a Dolby Atmos master") {
                 REQUIRE(items.objects.size() == 1);
                 REQUIRE(items.objects[0].blocks[0].state.cartesian);
             }
+
+            THEN("the bed is on the first tracks and the object after it, as in a Dolby Atmos master") {
+                // the input is object, bed L, bed R (0.25 0.5 0.75)
+                auto reader = bw64::readFile(path);
+                REQUIRE(reader->channels() == 3);
+                std::vector<float> frames(64 * 3);
+                REQUIRE(reader->read(frames.data(), 64) == 64);
+                REQUIRE(frames[0] == Approx(0.5).margin(1e-6));
+                REQUIRE(frames[1] == Approx(0.75).margin(1e-6));
+                REQUIRE(frames[2] == Approx(0.25).margin(1e-6));
+                reader.reset();
+                const auto items = admio::select_items(admio::load_file(path));
+                REQUIRE(items.direct.size() == 2);
+                REQUIRE(items.direct[0].track == 0);
+                REQUIRE(items.direct[1].track == 1);
+                REQUIRE(items.objects.size() == 1);
+                REQUIRE(items.objects[0].track == 2);
+            }
+        }
+
+        WHEN("the profile is changed while recording") {
+            const std::string path = out_path("recorded_dolby_changed.wav");
+            obj.start(atoms{ symbol(path) });
+            obj.profile = "ebu";
+            mc_audio_io io(3, k_block);
+            obj(io.input(), io.output());
+            const auto info = finish(obj);
+
+            THEN("the recording keeps the profile it started with, so the metadata matches the tracks") {
+                const auto items = admio::select_items(admio::load_file(path));
+                REQUIRE(items.direct.size() == 2);
+                REQUIRE(items.direct[0].track == 0);
+                REQUIRE(items.direct[0].cartesian);
+                REQUIRE(items.objects.size() == 1);
+                REQUIRE(items.objects[0].track == 2);
+            }
         }
     }
 }
