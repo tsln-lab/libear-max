@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.5.0](https://github.com/tsln-lab/libear-max/compare/v1.4.0...v1.5.0) (2026-11-06)
+
+
+### Features
+
+* add mc.ear.decorrelate~, the BS.2127 decorrelation filters as an effect ([#38](https://github.com/tsln-lab/libear-max/issues/38)) ([1c3eb91](https://github.com/tsln-lab/libear-max/commit/1c3eb91b37ebecf26dac19415ff8fe57b38c94a6))
+* let mc.ear.objects~, mc.ear.direct~ and mc.ear.hoa~ change layout at any time ([#40](https://github.com/tsln-lab/libear-max/issues/40)) ([6db20db](https://github.com/tsln-lab/libear-max/commit/6db20dbd053fae493efbfc3751283bb1b5a632a4))
+
+
+### Bug Fixes
+
+* write the bed's tracks first in Dolby-profile files ([#41](https://github.com/tsln-lab/libear-max/issues/41)) ([4a7fe66](https://github.com/tsln-lab/libear-max/commit/4a7fe660765e66c999c72ddf457ea994a23c5647))
+
 ## [1.4.0](https://github.com/tsln-lab/libear-max/compare/v1.3.0...v1.4.0) (2026-10-05)
 
 
