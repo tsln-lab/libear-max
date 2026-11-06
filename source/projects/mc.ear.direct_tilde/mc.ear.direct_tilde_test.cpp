@@ -357,4 +357,51 @@ SCENARIO("mc.ear.direct~ grows its allocation when a message or the input addres
     }
 }
 
+SCENARIO("mc.ear.direct~ takes a new layout at any time") {
+    ext_main(nullptr);
+
+    // 0+5+0 channel order: M+030 M-030 M+000 LFE1 M+110 M-110
+    constexpr size_t k_channels_050 = 6;
+    constexpr size_t k_m000_050 = 2;
+
+    GIVEN("a 0+5+0 bed rendered to 4+5+0 with the audio running") {
+        test_wrapper_args<mc_ear_direct_tilde> an_instance(atoms{ symbol("4+5+0") });
+        mc_ear_direct_tilde& obj = an_instance;
+        obj.inputlayout(atoms{ symbol("0+5+0") });
+        obj.vector_size(k_block);
+        obj.samplerate(48000.0);
+        obj.align = false;
+        obj.ramp = 0.0;
+        obj.dspsetup(atoms{ 48000.0, k_block });
+
+        WHEN("the layout changes to 0+5+0 and the audio chain is rebuilt") {
+            obj.layout = "0+5+0";
+            THEN("the layout, the gains and the output channel count follow") {
+                REQUIRE(obj.layout == symbol("0+5+0"));
+                REQUIRE(obj.channel_count() == k_channels_050);
+                REQUIRE(obj.mc_output_channels(0) == static_cast<long>(k_channels_050));
+                REQUIRE(obj.gains(k_m000_050).size() == k_channels_050);
+                REQUIRE(obj.gains(k_m000_050)[k_m000_050] == Approx(1.0));
+            }
+
+            obj.dspsetup(atoms{ 48000.0, k_block });
+            mc_audio_io io(k_channels_050, k_channels_050, k_block);
+            std::fill(io.ins[k_m000_050].begin(), io.ins[k_m000_050].end(), 1.0);
+            obj(io.input(), io.output());
+            THEN("the bed renders to the new layout") {
+                REQUIRE(io.outs[k_m000_050][k_block - 1] == Approx(1.0));
+                REQUIRE(io.outs[0][k_block - 1] == Approx(0.0).margin(1e-9));
+            }
+        }
+
+        WHEN("an unknown layout is set") {
+            obj.layout = "nope";
+            THEN("the layout is kept") {
+                REQUIRE(obj.layout == symbol("4+5+0"));
+                REQUIRE(obj.channel_count() == k_channels_450);
+            }
+        }
+    }
+}
+
 EARMAX_TEST_GENERATE_MAXREF(mc_ear_direct_tilde, "mc.ear.direct~")

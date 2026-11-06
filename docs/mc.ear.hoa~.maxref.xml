@@ -44,7 +44,7 @@
 				<arg name='layout' optional='0' type='symbol' />
 			</arglist>
 			<digest>Set the layout attribute</digest>
-			<description>Set the <at>layout</at> attribute. ITU-R BS.2051 output layout name, fixed at creation (give it as argument).</description>
+			<description>Set the <at>layout</at> attribute. ITU-R BS.2051 output layout name (the argument, or <at>layout).</at> It can be changed at any time: the decoding matrix is recalculated and the output takes the new channel count, the audio chain being rebuilt when it is running.</description>
 		</method>
 		<method name='normalization'>
 			<arglist>
@@ -77,8 +77,8 @@
 			<description>Delay the output by the latency of the object renderers (255 samples, the BS.2127 decorrelator compensation delay) so that the scene stays time-aligned with mc.ear.objects~ and ear.objects~ when their decorrelation is on, as the EAR reference renderer does. Turn off for zero latency when no decorrelating renderer is mixed in. Default: 1.</description>
 		</attribute>
 		<attribute name='layout' get='1' set='1' type='symbol' size='1'>
-			<digest>ITU-R BS.2051 output layout name, fixed at creation (give it as argument)</digest>
-			<description>ITU-R BS.2051 output layout name, fixed at creation (give it as argument).</description>
+			<digest>ITU-R BS.2051 output layout name (the argument, or <at>layout)</at></digest>
+			<description>ITU-R BS.2051 output layout name (the argument, or <at>layout).</at> It can be changed at any time: the decoding matrix is recalculated and the output takes the new channel count, the audio chain being rebuilt when it is running. Default: 0+5+0.</description>
 		</attribute>
 		<attribute name='normalization' get='1' set='1' type='symbol' size='1'>
 			<digest>Normalization of the ambisonic components: SN3D (the ADM default, also AmbiX), N3D or FuMa</digest>

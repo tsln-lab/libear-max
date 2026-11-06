@@ -52,8 +52,11 @@ multichannel input is an object with its own metadata, the multichannel output
 has one channel per loudspeaker. The decorrelators run once per loudspeaker on
 the shared diffuse bus.
 
-It takes the output layout as argument and has one multichannel inlet and
-one multichannel outlet. `@chans` is the number of input channels allocated,
+It takes the output layout as argument (or `@layout`) and has one multichannel
+inlet and one multichannel outlet. Unlike `ear.objects~`, the layout can be
+changed at any time, as can `mc.ear.direct~`'s and `mc.ear.hoa~`'s: the gains
+are recalculated and the outlet takes the new channel count, Max rebuilding the
+audio chain when it is running. `@chans` is the number of input channels allocated,
 16 by default; it grows by itself when the input signal carries more channels
 or a message addresses a higher one, up to 1024, and the new channels take
 effect when the audio is restarted (a message posts the new count). Metadata

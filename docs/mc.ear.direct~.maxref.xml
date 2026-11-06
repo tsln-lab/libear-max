@@ -59,7 +59,7 @@
 				<arg name='layout' optional='0' type='symbol' />
 			</arglist>
 			<digest>Set the layout attribute</digest>
-			<description>Set the <at>layout</at> attribute. ITU-R BS.2051 output layout name, fixed at creation (give it as argument).</description>
+			<description>Set the <at>layout</at> attribute. ITU-R BS.2051 output layout name (the argument, or <at>layout).</at> It can be changed at any time: the gains are recalculated and the output takes the new channel count, the audio chain being rebuilt when it is running.</description>
 		</method>
 		<method name='ramp'>
 			<arglist>
@@ -86,8 +86,8 @@
 			<description>Number of input channels allocated. It grows by itself when the input signal carries more channels, or a setvalue, applyvalues or inputlayout addresses a higher one, up to 1024; new channels take effect when the audio is restarted. Default: 16.</description>
 		</attribute>
 		<attribute name='layout' get='1' set='1' type='symbol' size='1'>
-			<digest>ITU-R BS.2051 output layout name, fixed at creation (give it as argument)</digest>
-			<description>ITU-R BS.2051 output layout name, fixed at creation (give it as argument).</description>
+			<digest>ITU-R BS.2051 output layout name (the argument, or <at>layout)</at></digest>
+			<description>ITU-R BS.2051 output layout name (the argument, or <at>layout).</at> It can be changed at any time: the gains are recalculated and the output takes the new channel count, the audio chain being rebuilt when it is running. Default: 0+5+0.</description>
 		</attribute>
 		<attribute name='ramp' get='1' set='1' type='float64' size='1'>
 			<digest>Gain interpolation time in milliseconds when metadata changes</digest>

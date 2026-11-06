@@ -57,6 +57,17 @@ long mc_inputchanged(c74::max::t_object* x, long inlet_index, long channels)
     return self->m_min_object.mc_input_changed(inlet_index, channels);
 }
 
+/// Ask Max to recompile the DSP chain the object runs in, so that a new
+/// output channel count (reported by `multichanneloutputs`) and the buffers
+/// sized at dspsetup take effect while the audio is running. Nothing happens
+/// when the audio is off: the next start compiles the chain anyway.
+inline void mc_rebuild_dsp(c74::max::t_object* o)
+{
+    if (c74::max::t_dspchain* chain = c74::max::dspchain_fromobject(o)) {
+        c74::max::dspchain_setbroken(chain);
+    }
+}
+
 /// Register the multichannel methods on the Max class (call from maxclass_setup).
 template <class min_class_type>
 void mc_register_methods(c74::max::t_class* c)

@@ -44,6 +44,7 @@ private:
     std::string m_normalization{ "SN3D" };
     long m_reported_mismatch{ 0 };
     bus_renderer m_bus;
+    std::string m_dsp_layout;    // the layout the bus was configured for at the last dspsetup
 
 public:
     inlet<> in_main{ this, "(multichannelsignal) ambisonic components in ACN order; (order/normalization) metadata" };
@@ -52,10 +53,9 @@ public:
     mc_ear_hoa_tilde(const atoms& args = {})
     {
         const std::string name = layout_from_args(args);
-        if (!apply_layout(name)) {
-            apply_layout(k_default_layout);
+        if (name != m_layout.name()) {
+            layout = symbol(name);    // the setter applies it, or keeps the default when it is unknown
         }
-        update();
     }
 
     // ------------------------------------------------------------------
@@ -63,11 +63,23 @@ public:
     // ------------------------------------------------------------------
 
     attribute<symbol> layout{ this, "layout", k_default_layout,
-        description{ "ITU-R BS.2051 output layout name, fixed at creation (give it as argument)." },
+        description{ "ITU-R BS.2051 output layout name (the argument, or @layout). It can be changed at any time: "
+                     "the decoding matrix is recalculated and the output takes the new channel count, the audio "
+                     "chain being rebuilt when it is running." },
         setter{ MIN_FUNCTION {
             const std::string name = args[0];
-            if (m_calc && name != m_layout.name()) {
-                cerr << "layout cannot be changed after creation; create a new object with the layout as argument" << endl;
+            if (m_calc && name == m_layout.name()) {
+                return args;
+            }
+            if (!apply_layout(name)) {
+                if (!m_calc) {
+                    apply_layout(k_default_layout);
+                }
+                return { symbol(m_layout.name()) };
+            }
+            update();
+            if (initialized()) {
+                mc_rebuild_dsp(maxobj());
             }
             return { symbol(m_layout.name()) };
         } } };
@@ -147,6 +159,7 @@ public:
     message<> dspsetup{ this, "dspsetup",
         MIN_FUNCTION {
             m_bus.configure(m_layout, input_count(), static_cast<size_t>(vector_size()), samplerate(), false, true);
+            m_dsp_layout = m_layout.name();
             m_bus.set_delay_compensation(static_cast<bool>(align));
             for (size_t i = 0; i < m_matrix.size(); ++i) {
                 m_bus.set_gains_now(i, m_matrix[i], m_silence);
@@ -268,7 +281,9 @@ private:
             return;
         }
         m_matrix = std::move(matrix);
-        if (initialized()) {
+        // after a layout change the bus keeps the old layout until the next
+        // dspsetup, which publishes this matrix
+        if (initialized() && m_dsp_layout == m_layout.name()) {
             // components beyond the bus capacity (a higher order than at the
             // last dspsetup) are picked up when the audio is restarted; bus
             // inputs beyond the new component count (a lower order) are silenced
