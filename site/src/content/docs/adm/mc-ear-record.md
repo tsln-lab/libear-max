@@ -47,5 +47,32 @@ RF64, which `mc.ear.play~` plays and `mc.sfplay~` cannot.
 [print]   recording / written take.wav 22 120000 / failed / position
 ```
 
+## Takes started by a signal
+
+`arm` (or `arm path`) prepares a take that a gate signal in the right inlet
+starts and ends, to the sample: the recording starts on the first sample
+where the gate turns non-zero after a zero, and ends on the first sample
+where it is zero again, after which the file is finished by itself. A gate
+already open when the take is armed is waited out, so the take starts at
+its next opening. One `arm` records one take; the outlet reports `armed
+path`, then `recording path` when the gate opens and `written ...` when the
+file is done. `stop` before the gate opens cancels the take (`cancelled
+path`, and no file is left), `stop` while it records ends it there. The
+gate inlet does not count as a recorded channel, and `start` ignores it.
+
+In Max for Live, a gate that is open while Live's transport runs makes the
+takes follow it, for example the movement of `plugphasor~`, the beat phase
+of the transport, which only changes while it plays:
+
+```
+[plugphasor~]
+|
+[delta~]
+|
+[!=~ 0]
+|
+[mc.ear.record~ ...]   (right inlet)
+```
+
 To write the file in the shape of the Dolby Atmos Master ADM Profile, set
 `@profile dolby`: see [Dolby Atmos masters](/libear-max/adm/dolby-atmos/#writing-a-dolby-atmos-master).

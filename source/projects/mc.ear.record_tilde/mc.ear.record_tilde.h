@@ -21,8 +21,10 @@
 #include "../shared/ear_max_mc.h"
 #include "../shared/ear_max_sink.h"
 
+#include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <thread>
 
 using namespace earmax;
@@ -38,8 +40,10 @@ public:
                      "cannot drift apart. The bed and scene metadata is static, given as 'direct ...' and 'hoa ...' "
                      "messages in the formats of mc.ear.direct~ and mc.ear.hoa~. 'open path' names the file, 'start' "
                      "(or 1) records from the current parameters, 'stop' (or 0) finishes the file and reports it on "
-                     "the outlet. Extra input channels are ignored, missing ones are silent. Files over 4 GB are "
-                     "written as RF64." };
+                     "the outlet. 'arm' instead starts and stops the take with the signal in the right inlet, to the "
+                     "sample: it starts where the gate turns non-zero and ends where it returns to zero (in Max for "
+                     "Live, a gate that moves with the transport makes takes follow Live's transport). Extra input "
+                     "channels are ignored, missing ones are silent. Files over 4 GB are written as RF64." };
     MIN_TAGS{ "spatial audio, ADM, files, mc" };
     MIN_AUTHOR{ "tsln-lab" };
     MIN_RELATED{ "mc.ear.play~, ear.adm, mc.ear.objects~, mc.ear.direct~, mc.ear.hoa~, mc.combine~, mc.sfrecord~" };
@@ -62,7 +66,16 @@ private:
     admio::adm_profile m_profile{ admio::adm_profile::ebu };
     admio::adm_profile m_recorded_profile{ admio::adm_profile::ebu };    // the profile at 'start': the track order follows it
     long m_vector{ 64 };
-    long m_in_channels{ 0 };            // channels of the multichannel input, from Max
+    long m_in_channels{ 0 };            // channels of the multichannel input, from Max (0: not reported)
+
+    // the gate ('arm'): the audio thread starts and ends the take; the main
+    // thread arms it and finishes the file
+    enum gate_state : int { k_gate_idle, k_gate_armed, k_gate_recording, k_gate_ended };
+    std::atomic<int> m_gate{ k_gate_idle };
+    std::atomic<bool> m_gate_started{ false };    // the take started: report it (main thread)
+    std::atomic<bool> m_gate_ended{ false };      // the gate closed: finish the file (main thread)
+    double m_gate_previous{ 0.0 };                // the gate's last sample (audio thread)
+    bool m_cancelled{ false };                    // 'stop' while armed: the empty file is removed (main thread)
     long m_reported_overflow{ -1 };
     bool m_dsp_started{ false };
 
@@ -70,7 +83,10 @@ public:
     inlet<> in_main{ this, "(multichannelsignal) the tracks in file order: objects, bed, HOA; (messages) open/start/stop, "
                            "setvalue/applyvalues/parameters as to mc.ear.objects~, direct ..., hoa ...",
                      "multichannelsignal" };
-    outlet<> out_info{ this, "(messages) recording, written, failed, position" };
+    inlet<> in_gate{ this, "(signal) gate for 'arm': the take starts on the first sample where it turns non-zero "
+                           "and ends on the first where it is zero again",
+                     "signal" };
+    outlet<> out_info{ this, "(messages) armed, recording, written, cancelled, failed, position" };
 
     mc_ear_record_tilde(const atoms& args = {})
     {
@@ -206,9 +222,23 @@ public:
             return {};
         } };
 
+    message<> arm{ this, "arm",
+        "Arm a take started and ended by the gate signal in the right inlet ('arm path' also names the file): the "
+        "recording starts on the first sample where the gate turns non-zero after a zero (so a gate already open waits "
+        "for the next opening), and ends on the first sample where it is zero again; the file is then finished by "
+        "itself. One 'arm' records one take. Reports 'armed path', then 'recording path' when the take starts; 'stop' "
+        "while armed cancels the take ('cancelled path').",
+        MIN_FUNCTION {
+            if (!args.empty() && atom_is_symbol(args[0])) {
+                m_path = admio::resolve_path(std::string(args[0]), false);
+            }
+            begin(true);
+            return {};
+        } };
+
     message<> stop{ this, "stop",
         "Stop recording: the file is finished with the captured metadata and reported as 'written path tracks "
-        "length-ms' on the outlet (or 'failed path').",
+        "length-ms' on the outlet (or 'failed path'). While armed, the take is cancelled.",
         MIN_FUNCTION {
             end();
             return {};
@@ -383,8 +413,11 @@ public:
         return 1;
     }
 
-    long mc_input_changed(long, long channels)
+    long mc_input_changed(long inlet, long channels)
     {
+        if (inlet != 0) {
+            return 0;    // the gate
+        }
         m_in_channels = channels;
         const long recorded = static_cast<long>(expected_channels());
         if (channels > recorded && channels != m_reported_overflow) {
@@ -398,10 +431,65 @@ public:
     void operator()(audio_bundle input, audio_bundle output)
     {
         (void)output;
-        if (!m_sink.recording()) {
-            return;
+        double** ins = input.samples();
+        const long total = input.channel_count();
+        const long frames = input.frame_count();
+        // the channels of the left inlet come first, the gate's after them
+        const long recorded = (m_in_channels > 0 && m_in_channels < total) ? m_in_channels : total;
+        const double* gate = recorded < total ? ins[recorded] : nullptr;
+
+        const int state = m_gate.load(std::memory_order_acquire);
+        if (state == k_gate_armed || state == k_gate_recording) {
+            long first = 0;
+            bool started = false;
+            bool ended = false;
+            double previous = m_gate_previous;
+            long i = 0;
+            if (state == k_gate_armed) {
+                for (; i < frames; ++i) {
+                    const double g = gate ? gate[i] : 0.0;
+                    if (previous == 0.0 && g != 0.0) {
+                        started = true;
+                        break;
+                    }
+                    previous = g;
+                }
+                first = i;
+            }
+            if (state == k_gate_recording || started) {
+                for (; i < frames; ++i) {
+                    const double g = gate ? gate[i] : 0.0;
+                    if (g == 0.0) {
+                        ended = true;
+                        break;
+                    }
+                    previous = g;
+                }
+                if (m_sink.recording()) {
+                    m_sink.push(ins, recorded, first, i - first);
+                }
+            }
+            m_gate_previous = ended ? 0.0 : (frames > 0 && gate ? gate[frames - 1] : 0.0);
+            if (started) {
+                m_gate.store(ended ? k_gate_ended : k_gate_recording, std::memory_order_release);
+                m_gate_started.store(true, std::memory_order_release);
+            }
+            else if (ended) {
+                m_gate.store(k_gate_ended, std::memory_order_release);
+            }
+            if (ended) {
+                m_gate_ended.store(true, std::memory_order_release);
+            }
+            if (started || ended) {
+                m_queue.set();
+            }
         }
-        m_sink.push(input.samples(), input.channel_count(), input.frame_count());
+        else {
+            m_gate_previous = frames > 0 && gate ? gate[frames - 1] : 0.0;
+            if (state == k_gate_idle && m_sink.recording()) {
+                m_sink.push(ins, recorded, frames);
+            }
+        }
         if (m_sink.overruns() > 0) {
             m_queue.set();    // report the dropped vectors from the main thread
         }
@@ -414,6 +502,12 @@ public:
     bool recording() const
     {
         return m_sink.recording();
+    }
+
+    /// armed and waiting for the gate (tests)
+    bool armed() const
+    {
+        return m_gate.load() == k_gate_armed;
     }
 
     /// the length recorded so far in seconds, from the audio thread's frames
@@ -491,7 +585,8 @@ private:
         return p;
     }
 
-    void begin()
+    /// Start a take: at once, or (`gated`) armed for the gate signal.
+    void begin(bool gated = false)
     {
         if (m_sink.recording()) {
             cerr << "already recording" << endl;
@@ -519,15 +614,22 @@ private:
             return;
         }
         const auto sources = admio::track_sources(m_profile, m_capture.size(), m_bed.size(), m_recorded_channels);
+        // armed before the sink records, so that the audio thread never
+        // writes the frames before the gate opens
+        m_gate_started.store(false);
+        m_gate_ended.store(false);
+        m_cancelled = false;
+        m_gate.store(gated ? k_gate_armed : k_gate_idle, std::memory_order_release);
         if (!m_sink.start(m_path, static_cast<uint16_t>(m_recorded_channels), static_cast<uint32_t>(std::lround(m_samplerate)),
                           static_cast<uint16_t>(static_cast<int>(bitdepth)), sources)) {
             cerr << "start: could not start the recording" << endl;
+            m_gate.store(k_gate_idle);
             return;
         }
         m_recorded_profile = m_profile;
         m_capture.begin();
         m_bed.begin();
-        out_info.send("recording", symbol(m_path));
+        out_info.send(gated ? "armed" : "recording", symbol(m_path));
     }
 
     void end()
@@ -535,6 +637,9 @@ private:
         if (!m_sink.recording()) {
             return;
         }
+        // a take still waiting for its gate is cancelled: its empty file is removed once finished
+        m_cancelled = m_gate.load() == k_gate_armed;
+        m_gate.store(k_gate_idle, std::memory_order_release);
         m_capture.end();
         m_bed.end();
         m_sink.finish(captured_programme());
@@ -564,6 +669,12 @@ private:
 
     void on_queue()
     {
+        if (m_gate_started.exchange(false)) {
+            out_info.send("recording", symbol(m_path));
+        }
+        if (m_gate_ended.exchange(false)) {
+            end();
+        }
         const long overruns = m_sink.take_overruns();
         if (overruns > 0) {
             cerr << overruns << " signal vectors were dropped (disk too slow)" << endl;
@@ -573,7 +684,12 @@ private:
             for (const auto& w : result.warnings) {
                 cerr << w << endl;
             }
-            if (result.ok) {
+            if (m_cancelled) {
+                m_cancelled = false;
+                std::remove(result.path.c_str());
+                out_info.send("cancelled", symbol(result.path));
+            }
+            else if (result.ok) {
                 const double ms = m_samplerate > 0.0 ? static_cast<double>(result.frames) / m_samplerate * 1000.0 : 0.0;
                 out_info.send("written", symbol(result.path), static_cast<int>(result.channels), ms);
             }

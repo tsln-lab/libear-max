@@ -190,6 +190,16 @@ public:
     /// frees.
     void push(double** ins, long in_channels, long frames)
     {
+        push(ins, in_channels, 0, frames);
+    }
+
+    /// The same for the frames `first` to `first + frames - 1` of the
+    /// vector, so that a take can start or end within a vector.
+    void push(double** ins, long in_channels, long first, long frames)
+    {
+        if (frames <= 0) {
+            return;
+        }
         if (!m_recording.load(std::memory_order_acquire)) {
             return;
         }
@@ -209,7 +219,7 @@ public:
             float* frame = &m_ring[index * channels];
             for (size_t t = 0; t < channels; ++t) {
                 const size_t ch = m_sources[t];
-                frame[t] = static_cast<long>(ch) < in_channels ? static_cast<float>(ins[ch][i]) : 0.0f;
+                frame[t] = static_cast<long>(ch) < in_channels ? static_cast<float>(ins[ch][first + i]) : 0.0f;
             }
         }
         m_write_total.store(write_total + static_cast<uint64_t>(frames), std::memory_order_release);
