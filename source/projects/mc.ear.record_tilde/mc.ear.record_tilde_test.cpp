@@ -440,6 +440,8 @@ SCENARIO("mc.ear.record~ records a Dolby Atmos master") {
                     xml = ss.str();
                 }
                 INFO(xml);
+                REQUIRE(times_have_five_decimals(xml));
+                REQUIRE(riff_chunk_ids(path) == "JUNK fmt  chna data axml dbmd");
                 REQUIRE(xml.find("audioChannelFormatName=\"RoomCentricLeft\"") != std::string::npos);
                 REQUIRE(xml.find("<cartesian>1</cartesian>") != std::string::npos);
                 REQUIRE(xml.find("audioObjectID=\"AO_1001\" audioObjectName=\"bed\"") != std::string::npos);

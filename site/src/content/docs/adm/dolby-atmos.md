@@ -53,5 +53,17 @@ window for `ear.adm`): an HOA scene (its tracks are written without
 metadata), `objectDivergence`, `screenRef`, `screenEdgeLock`, the
 `channelLock` `maxDistance`, zones outside the vocabulary and timed changes
 of the bed; a sample rate other than 48 or 96 kHz or a bit depth other than
-24 is reported as well. The `dbmd` chunk the profile also asks for is not
-written yet.
+24 is reported as well.
+
+Two things make such a file one that Dolby Atmos importers take (WaveLab's
+Dolby Atmos import refuses a file without either):
+
+- every time (programme end, object start and duration, block `rtime` and
+  `duration`) has the five decimals of `hh:mm:ss.zzzzz`, rounded down to
+  10 µs, as Dolby's tools write them; the `ebu` profile keeps the full
+  precision;
+- the file ends with a `dbmd` chunk, Dolby's binary metadata. Its layout is
+  not published: libear-max writes the one of a Dolby master WaveLab took,
+  with `libear-max` as the writing tool's name. The settings it carries
+  (bytes whose meaning is unknown) are that master's, the same for every
+  file.

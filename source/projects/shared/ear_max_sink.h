@@ -360,6 +360,10 @@ private:
                 m_writer->setChnaChunk(chna);
                 m_writer->setAxmlChunk(std::make_shared<bw64::AxmlChunk>(to_xml(doc)));
                 m_writer->useRf64Id(captured.profile == adm_profile::dolby);    // the Dolby profile's id for a file of 4 GB or more
+                if (captured.profile == adm_profile::dolby) {
+                    // Dolby's metadata chunk, after the axml as in Dolby's masters
+                    m_writer->setAxmlChunk(std::make_shared<dbmd_chunk>(dolby_dbmd()));
+                }
             }
             m_writer->close();
             result.frames = frames;
