@@ -3,7 +3,7 @@
 <c74object name='mc.ear.record~' category='spatial audio, ADM, files, mc'>
 
 	<digest>Record an ADM file (BW64 with ADM metadata): the multichannel input carries the tracks in file order, the objects' audio first (one channel per object, as fed to mc.ear.objects~), then a DirectSpeakers bed (directchans) and an HOA scene (hoaorder), combined with mc.combine~</digest>
-	<description>Record an ADM file (BW64 with ADM metadata): the multichannel input carries the tracks in file order, the objects' audio first (one channel per object, as fed to mc.ear.objects~), then a DirectSpeakers bed (directchans) and an HOA scene (hoaorder), combined with mc.combine~. The object metadata is sent to this object in the same format as to mc.ear.objects~ (setvalue N parameter, applyvalues, lists) while it records: every change is written as an audioBlockFormat timed by the audio itself, with the ramp in force as its interpolation, so audio and metadata cannot drift apart. The bed and scene metadata is static, given as 'direct ...' and 'hoa ...' messages in the formats of mc.ear.direct~ and mc.ear.hoa~. 'open path' names the file, 'start' (or 1) records from the current parameters, 'stop' (or 0) finishes the file and reports it on the outlet. Extra input channels are ignored, missing ones are silent. Files over 4 GB are written as RF64.</description>
+	<description>Record an ADM file (BW64 with ADM metadata): the multichannel input carries the tracks in file order, the objects' audio first (one channel per object, as fed to mc.ear.objects~), then a DirectSpeakers bed (directchans) and an HOA scene (hoaorder), combined with mc.combine~. The object metadata is sent to this object in the same format as to mc.ear.objects~ (setvalue N parameter, applyvalues, lists) while it records: every change is written as an audioBlockFormat timed by the audio itself, with the ramp in force as its interpolation, so audio and metadata cannot drift apart. The bed and scene metadata is static, given as 'direct ...' and 'hoa ...' messages in the formats of mc.ear.direct~ and mc.ear.hoa~. 'open path' names the file, 'start' (or 1) records from the current parameters, 'stop' (or 0) finishes the file and reports it on the outlet. 'arm' instead starts and stops the take with the signal in the right inlet, to the sample: it starts where the gate turns non-zero and ends where it returns to zero (in Max for Live, a gate that moves with the transport makes takes follow Live's transport). Extra input channels are ignored, missing ones are silent. Files over 4 GB are written as RF64.</description>
 
 	<!--METADATA-->
 
@@ -30,6 +30,10 @@
 		<method name='applyvalues'>
 			<digest>Object metadata: 'applyvalues parameter v1 v2 v3 ...' spreads values over the objects</digest>
 			<description>Object metadata: 'applyvalues parameter v1 v2 v3 ...' spreads values over the objects.</description>
+		</method>
+		<method name='arm'>
+			<digest>Arm a take started and ended by the gate signal in the right inlet ('arm path' also names the file): the recording starts on the first sample where the gate turns non-zero after a zero (so a gate already open waits for the next opening), and ends on the first sample where it is zero again; the file is then finished by itself</digest>
+			<description>Arm a take started and ended by the gate signal in the right inlet ('arm path' also names the file): the recording starts on the first sample where the gate turns non-zero after a zero (so a gate already open waits for the next opening), and ends on the first sample where it is zero again; the file is then finished by itself. One 'arm' records one take. Reports 'armed path', then 'recording path' when the take starts; 'stop' while armed cancels the take ('cancelled path').</description>
 		</method>
 		<method name='bitdepth'>
 			<arglist>
@@ -129,7 +133,7 @@
 		</method>
 		<method name='stop'>
 			<digest>Stop recording: the file is finished with the captured metadata and reported as 'written path tracks length-ms' on the outlet (or 'failed path')</digest>
-			<description>Stop recording: the file is finished with the captured metadata and reported as 'written path tracks length-ms' on the outlet (or 'failed path').</description>
+			<description>Stop recording: the file is finished with the captured metadata and reported as 'written path tracks length-ms' on the outlet (or 'failed path'). While armed, the take is cancelled.</description>
 		</method>
 	</methodlist>
 
