@@ -1097,13 +1097,140 @@ SCENARIO("ear.adm writes a DirectSpeakers bed and an HOA scene after the objects
     }
 }
 
+SCENARIO("the dbmd chunk of a Dolby Atmos master") {
+    GIVEN("the chunk libear-max writes") {
+        const auto body = admio::dolby_dbmd();
+
+        THEN("it has the version, a segment 7 and a Dolby Atmos segment 9 with libear-max's name, and the end bytes") {
+            REQUIRE(body.size() == 358);
+            REQUIRE(body[0] == 0x06);
+            REQUIRE(body[3] == 0x01);
+            REQUIRE(body[4] == 7);
+            REQUIRE(body[5] == 96);
+            REQUIRE(body[104] == 9);
+            REQUIRE(body[105] == 248);
+            REQUIRE(body[107] == 0);    // no first string
+            REQUIRE(std::string(reinterpret_cast<const char*>(&body[107 + 32])) == "libear-max");
+            REQUIRE(body[356] == 0);
+            REQUIRE(body[357] == 0);
+        }
+
+        THEN("every segment's checksum makes the sum of its size and payload bytes zero") {
+            for (size_t at : { size_t(4), size_t(104) }) {
+                const size_t n = body[at + 1] | (body[at + 2] << 8);
+                unsigned sum = 0;
+                for (size_t k = at + 1; k < at + 3 + n + 1; ++k) {
+                    sum += body[k];
+                }
+                REQUIRE((sum & 0xffu) == 0);
+            }
+        }
+    }
+
+    GIVEN("the strings of the Dolby Home Theater RMU master WaveLab took (nocturne in the test corpus)") {
+        const auto body = admio::dolby_dbmd("Dolby Home Theater RMU", "Created using Dolby equipment");
+
+        THEN("the chunk has that master's size and checksums") {
+            REQUIRE(body.size() == 358);
+            REQUIRE(body[103] == 0xad);    // segment 7
+            REQUIRE(body[355] == 0xbd);    // segment 9: covers the settings bytes as well
+        }
+    }
+}
+
+SCENARIO("ear.adm writes a Dolby Atmos master's times with five decimals") {
+    GIVEN("an object whose second block and whose programme end fall between 10 microsecond steps") {
+        admio::captured_programme captured;
+        captured.profile = admio::adm_profile::dolby;
+        admio::captured_object object;
+        object.name = "object";
+        admio::object_state s;
+        object.blocks.push_back({ 0.0, 0.0, s });
+        s.azimuth = 30.0;
+        object.blocks.push_back({ 0.123456789, 0.0, s });
+        captured.objects = { object };
+
+        std::vector<bw64::AudioId> chna_ids;
+        std::vector<std::string> warnings;
+        const std::string xml = admio::to_xml(admio::build_document(captured, 5.697333333, chna_ids, warnings));
+        INFO(xml);
+
+        THEN("every time is rounded down to hh:mm:ss.zzzzz and the blocks stay contiguous") {
+            REQUIRE(times_have_five_decimals(xml));
+            REQUIRE(xml.find("end=\"00:00:05.69733\"") != std::string::npos);
+            REQUIRE(xml.find("rtime=\"00:00:00.12345\"") != std::string::npos);
+            REQUIRE(xml.find("duration=\"00:00:00.12345\"") != std::string::npos);
+            REQUIRE(xml.find("duration=\"00:00:05.57388\"") != std::string::npos);    // 5.69733 - 0.12345
+        }
+    }
+
+    GIVEN("an object with several changes within 10 microseconds of the start and of the end, in a named programme") {
+        admio::captured_programme captured;
+        captured.name = "Mix";
+        captured.profile = admio::adm_profile::dolby;
+        admio::captured_object object;
+        object.name = "object";
+        admio::object_state s;
+        object.blocks.push_back({ 0.0, 0.0, s });
+        s.azimuth = 10.0;
+        object.blocks.push_back({ 0.000001, 0.0, s });
+        s.azimuth = 20.0;
+        object.blocks.push_back({ 0.000004, 0.0, s });
+        s.azimuth = 90.0;
+        object.blocks.push_back({ 0.5, 0.0, s });
+        s.azimuth = -90.0;
+        object.blocks.push_back({ 1.000001, 0.0, s });    // the take ends at 1.000005: the same 10 us step
+        captured.objects = { object };
+
+        std::vector<bw64::AudioId> chna_ids;
+        std::vector<std::string> warnings;
+        auto doc = admio::build_document(captured, 1.000005, chna_ids, warnings);
+        const std::string xml = admio::to_xml(doc);
+        INFO(xml);
+
+        THEN("the programme is Atmos_Master, with a warning about the name") {
+            REQUIRE(xml.find("audioProgrammeName=\"Atmos_Master\"") != std::string::npos);
+            REQUIRE(xml.find("\"Mix\"") == std::string::npos);
+            bool warned = false;
+            for (const auto& w : warnings) {
+                warned = warned || w.find("Atmos_Master") != std::string::npos;
+            }
+            REQUIRE(warned);
+        }
+        THEN("no block has a zero duration: the last change at the start is written from 0, the one at the end is left out") {
+            REQUIRE(xml.find("duration=\"00:00:00.00000\"") == std::string::npos);
+            const auto channel = doc->getElements<adm::AudioChannelFormat>().front();
+            const auto blocks = channel->getElements<adm::AudioBlockFormatObjects>();
+            REQUIRE(blocks.size() == 2);
+            REQUIRE(blocks[0].get<adm::Rtime>().get().asNanoseconds().count() == 0);
+            REQUIRE(blocks[0].get<adm::Duration>().get().asNanoseconds().count() == 500000000);
+            REQUIRE(blocks[1].get<adm::Duration>().get().asNanoseconds().count() == 500000000);
+        }
+    }
+
+    GIVEN("the same object with the ebu profile") {
+        admio::captured_programme captured;
+        admio::captured_object object;
+        object.name = "object";
+        admio::object_state s;
+        object.blocks.push_back({ 0.0, 0.0, s });
+        captured.objects = { object };
+        std::vector<bw64::AudioId> chna_ids;
+        std::vector<std::string> warnings;
+        const std::string xml = admio::to_xml(admio::build_document(captured, 5.697333333, chna_ids, warnings));
+
+        THEN("the times keep their precision") {
+            REQUIRE_FALSE(times_have_five_decimals(xml));
+        }
+    }
+}
+
 SCENARIO("ear.adm writes a Dolby Atmos master") {
     ext_main(nullptr);
     const size_t npos = std::string::npos;
 
     GIVEN("a programme captured with the Dolby profile: two objects, a 7.1.2 bed and a scene") {
         admio::captured_programme captured;
-        captured.name = "Mix";
         captured.profile = admio::adm_profile::dolby;
 
         // a polar object with the profile's back zone, another zone, and
@@ -1343,6 +1470,7 @@ SCENARIO("ear.adm writes a Dolby Atmos master") {
                     file.read(id, 4);
                     REQUIRE(std::string(id, 4) == "RIFF");    // RF64 only from 4 GB
                 }
+                REQUIRE(riff_chunk_ids(out).find("dbmd") != std::string::npos);
                 {
                     // the audio came as object, bed L, bed R (0.25 0.5 0.75); the bed is written first
                     auto file = bw64::readFile(out);
