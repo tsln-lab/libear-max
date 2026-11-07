@@ -7,6 +7,7 @@
 /// @license Use of this source code is governed by the MIT License found in the License.md file.
 
 #include <cstdio>
+#include <fstream>
 #include <sstream>
 
 #include "../shared/ear_max_test.h"
@@ -490,6 +491,168 @@ SCENARIO("mc.ear.record~ records a Dolby Atmos master") {
                 REQUIRE(items.direct[0].cartesian);
                 REQUIRE(items.objects.size() == 1);
                 REQUIRE(items.objects[0].track == 2);
+            }
+        }
+    }
+}
+
+namespace {
+
+/// Two recorded channels and the gate: channel 0 carries the running sample
+/// index / 1000 (so a recorded sample tells where it came from), channel 1
+/// is 0.5, the gate is open from `open_at` (global sample index) to
+/// `close_at` (exclusive; negative: stays open).
+struct gated_io {
+    std::vector<std::vector<double>> ins;
+    std::vector<double*> in_ptrs;
+
+    gated_io() : ins(3, std::vector<double>(static_cast<size_t>(k_block), 0.0))
+    {
+        for (auto& i : ins) in_ptrs.push_back(i.data());
+    }
+
+    void fill(long vector_index, long open_at, long close_at)
+    {
+        for (long i = 0; i < k_block; ++i) {
+            const long n = vector_index * k_block + i;
+            ins[0][static_cast<size_t>(i)] = static_cast<double>(n) / 1000.0;
+            ins[1][static_cast<size_t>(i)] = 0.5;
+            const bool open = n >= open_at && (close_at < 0 || n < close_at);
+            ins[2][static_cast<size_t>(i)] = open ? 1.0 : 0.0;
+        }
+    }
+
+    audio_bundle input()
+    {
+        return audio_bundle{ in_ptrs.data(), 3, k_block };
+    }
+
+    audio_bundle output()
+    {
+        return audio_bundle{ nullptr, 0, k_block };
+    }
+};
+
+/// run vectors 0..count-1 with the gate open from open_at to close_at
+void run_gated(mc_ear_record_tilde& obj, gated_io& io, long count, long open_at, long close_at, long from = 0)
+{
+    for (long v = from; v < from + count; ++v) {
+        io.fill(v, open_at, close_at);
+        obj(io.input(), io.output());
+    }
+}
+
+/// the frames of a recorded file, interleaved
+std::vector<float> read_frames(const std::string& path, size_t& channels, uint64_t& count)
+{
+    auto reader = bw64::readFile(path);
+    channels = reader->channels();
+    count = reader->numberOfFrames();
+    std::vector<float> frames(static_cast<size_t>(count) * channels);
+    if (count > 0) {
+        reader->read(frames.data(), count);
+    }
+    return frames;
+}
+
+bool file_exists(const std::string& path)
+{
+    std::ifstream f(path, std::ios::binary);
+    return f.good();
+}
+
+} // namespace
+
+SCENARIO("mc.ear.record~ starts and ends an armed take with the gate signal, to the sample") {
+    ext_main(nullptr);
+
+    GIVEN("an instance recording two objects, with the gate in its right inlet") {
+        test_wrapper<mc_ear_record_tilde> an_instance;
+        mc_ear_record_tilde& obj = an_instance;
+        obj.chans = 2;
+        obj.directchans = 0;
+        obj.hoa(atoms{ symbol("order"), -1 });
+        start_dsp(obj);
+        REQUIRE(obj.mc_input_changed(0, 2) == 0);
+        REQUIRE(obj.mc_input_changed(1, 1) == 0);    // the gate does not count as recorded channels
+        gated_io io;
+
+        WHEN("the take is armed and the gate opens at sample 74 and closes at sample 212") {
+            const std::string path = out_path("gated.wav");
+            obj.arm(atoms{ symbol(path) });
+            REQUIRE(obj.armed());
+            REQUIRE(contains(messages(obj, k_info), "armed " + path));
+            run_gated(obj, io, 1, 74, 212);    // vector 0: closed
+            REQUIRE(obj.armed());
+            run_gated(obj, io, 4, 74, 212, 1);    // vectors 1-4: opens in 1, closes in 3
+            obj.flush();    // the main thread: reports the start, finishes the file at the close
+            REQUIRE(obj.wait_done(k_done_timeout_ms));
+            obj.flush();
+            const auto info = messages(obj, k_info);
+
+            THEN("the file holds exactly the samples while the gate was open, from the first one") {
+                REQUIRE(contains(info, "recording " + path));
+                REQUIRE(contains(info, "written " + path + " 2 2.875"));    // 138 frames at 48 kHz
+                REQUIRE_FALSE(obj.recording());
+                size_t channels = 0;
+                uint64_t count = 0;
+                const auto frames = read_frames(path, channels, count);
+                REQUIRE(channels == 2);
+                REQUIRE(count == 138);
+                REQUIRE(frames[0] == Approx(0.074).margin(1e-6));                   // sample 74
+                REQUIRE(frames[1] == Approx(0.5).margin(1e-6));
+                REQUIRE(frames[(count - 1) * 2] == Approx(0.211).margin(1e-6));    // sample 211, the last open one
+            }
+        }
+
+        WHEN("the take is armed while the gate is already open") {
+            const std::string path = out_path("gated_wait.wav");
+            run_gated(obj, io, 1, 0, 100);    // the audio runs with the gate open
+            obj.arm(atoms{ symbol(path) });
+            run_gated(obj, io, 1, 0, 100, 1);    // still open, closes at 100: no start
+            THEN("it waits for the gate to close and open again") {
+                REQUIRE(obj.armed());
+            }
+            run_gated(obj, io, 2, 133, -1, 2);    // opens at 133
+            REQUIRE_FALSE(obj.armed());
+            obj.stop();
+            REQUIRE(obj.wait_done(k_done_timeout_ms));
+            obj.flush();
+            size_t channels = 0;
+            uint64_t count = 0;
+            const auto frames = read_frames(path, channels, count);
+            THEN("the take starts at the new opening and 'stop' ends it") {
+                REQUIRE(count == 256 - 133);
+                REQUIRE(frames[0] == Approx(0.133).margin(1e-6));
+            }
+        }
+
+        WHEN("the take is armed and stopped before the gate opens") {
+            const std::string path = out_path("gated_cancelled.wav");
+            obj.arm(atoms{ symbol(path) });
+            run_gated(obj, io, 2, 1000, -1);
+            obj.stop();
+            REQUIRE(obj.wait_done(k_done_timeout_ms));
+            obj.flush();
+            THEN("the take is cancelled and leaves no file") {
+                REQUIRE(contains(messages(obj, k_info), "cancelled " + path));
+                REQUIRE_FALSE(file_exists(path));
+                REQUIRE_FALSE(obj.armed());
+            }
+        }
+
+        WHEN("a take is started with 'start', with the gate in the inlet") {
+            const std::string path = out_path("ungated.wav");
+            obj.start(atoms{ symbol(path) });
+            run_gated(obj, io, 2, 1000, -1);    // the gate stays closed
+            const auto info = finish(obj);
+            THEN("the gate is ignored and not recorded as a channel") {
+                size_t channels = 0;
+                uint64_t count = 0;
+                const auto frames = read_frames(path, channels, count);
+                REQUIRE(channels == 2);
+                REQUIRE(count == 128);
+                REQUIRE(frames[0] == Approx(0.0).margin(1e-6));
             }
         }
     }
