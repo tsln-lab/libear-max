@@ -1379,10 +1379,27 @@ inline void add_dolby_object_blocks(const std::shared_ptr<adm::AudioChannelForma
                                     double length, std::vector<std::string>& warnings)
 {
     std::set<std::string> dropped;
-    for (size_t k = 0; k < object.blocks.size(); ++k) {
-        const captured_block& c = object.blocks[k];
-        const object_state& s = c.state;
-        const double next = k + 1 < object.blocks.size() ? object.blocks[k + 1].time : length;
+    // A block would have no duration where the next one starts within the
+    // profile's 10 us (several changes at the start of a take, say), and the
+    // Dolby Atmos Renderer rejects such a block: the later state is written
+    // from the earlier time instead. A change within 10 us of the end of the
+    // take is left out.
+    std::vector<std::pair<double, const captured_block*>> kept;    // start, block
+    for (const captured_block& c : object.blocks) {
+        double start = c.time;
+        if (!kept.empty() && dolby_duration(kept.back().first, c.time).asNanoseconds().count() == 0) {
+            start = kept.back().first;
+            kept.pop_back();
+        }
+        kept.emplace_back(start, &c);
+    }
+    if (kept.size() > 1 && dolby_duration(kept.back().first, length).asNanoseconds().count() == 0) {
+        kept.pop_back();
+    }
+    for (size_t k = 0; k < kept.size(); ++k) {
+        const double time = kept[k].first;
+        const object_state& s = kept[k].second->state;
+        const double next = k + 1 < kept.size() ? kept[k + 1].first : length;
 
         ear::ObjectsTypeMetadata otm;
         if (s.cartesian) {
@@ -1405,8 +1422,8 @@ inline void add_dolby_object_blocks(const std::shared_ptr<adm::AudioChannelForma
         adm::AudioBlockFormatObjects block(adm::CartesianPosition(adm::X(static_cast<float>(clamp(cart.X))),
                                                                   adm::Y(static_cast<float>(clamp(cart.Y))),
                                                                   adm::Z(static_cast<float>(clamp(cart.Z)))));
-        block.set(adm::Rtime(dolby_time(c.time)));
-        block.set(adm::Duration(dolby_duration(c.time, next)));
+        block.set(adm::Rtime(dolby_time(time)));
+        block.set(adm::Duration(dolby_duration(time, next)));
         block.set(adm::Cartesian(true));
         const double size = std::max(0.0, std::max(otm.width, std::max(otm.height, otm.depth)));
         if (size > 0.0) {
@@ -1585,7 +1602,11 @@ inline std::shared_ptr<adm::Document> build_dolby_document(const captured_progra
                                                            audio_format format)
 {
     auto doc = adm::Document::create();
-    auto programme = adm::AudioProgramme::create(adm::AudioProgrammeName(captured.name));
+    // the profile's programme name: the Dolby Atmos Renderer takes no other
+    if (captured.name != "Atmos_Master" && captured.name != "libear-max") {
+        warnings.push_back("the Dolby profile names its programme Atmos_Master: '" + captured.name + "' is not written");
+    }
+    auto programme = adm::AudioProgramme::create(adm::AudioProgrammeName("Atmos_Master"));
     programme->set(adm::Start(dolby_time(0.0)));
     programme->set(adm::End(dolby_time(length)));
     auto content = adm::AudioContent::create(adm::AudioContentName("Atmos_Master_Content"));

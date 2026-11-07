@@ -1164,6 +1164,50 @@ SCENARIO("ear.adm writes a Dolby Atmos master's times with five decimals") {
         }
     }
 
+    GIVEN("an object with several changes within 10 microseconds of the start and of the end, in a named programme") {
+        admio::captured_programme captured;
+        captured.name = "Mix";
+        captured.profile = admio::adm_profile::dolby;
+        admio::captured_object object;
+        object.name = "object";
+        admio::object_state s;
+        object.blocks.push_back({ 0.0, 0.0, s });
+        s.azimuth = 10.0;
+        object.blocks.push_back({ 0.000001, 0.0, s });
+        s.azimuth = 20.0;
+        object.blocks.push_back({ 0.000004, 0.0, s });
+        s.azimuth = 90.0;
+        object.blocks.push_back({ 0.5, 0.0, s });
+        s.azimuth = -90.0;
+        object.blocks.push_back({ 1.000001, 0.0, s });    // the take ends at 1.000005: the same 10 us step
+        captured.objects = { object };
+
+        std::vector<bw64::AudioId> chna_ids;
+        std::vector<std::string> warnings;
+        auto doc = admio::build_document(captured, 1.000005, chna_ids, warnings);
+        const std::string xml = admio::to_xml(doc);
+        INFO(xml);
+
+        THEN("the programme is Atmos_Master, with a warning about the name") {
+            REQUIRE(xml.find("audioProgrammeName=\"Atmos_Master\"") != std::string::npos);
+            REQUIRE(xml.find("\"Mix\"") == std::string::npos);
+            bool warned = false;
+            for (const auto& w : warnings) {
+                warned = warned || w.find("Atmos_Master") != std::string::npos;
+            }
+            REQUIRE(warned);
+        }
+        THEN("no block has a zero duration: the last change at the start is written from 0, the one at the end is left out") {
+            REQUIRE(xml.find("duration=\"00:00:00.00000\"") == std::string::npos);
+            const auto channel = doc->getElements<adm::AudioChannelFormat>().front();
+            const auto blocks = channel->getElements<adm::AudioBlockFormatObjects>();
+            REQUIRE(blocks.size() == 2);
+            REQUIRE(blocks[0].get<adm::Rtime>().get().asNanoseconds().count() == 0);
+            REQUIRE(blocks[0].get<adm::Duration>().get().asNanoseconds().count() == 500000000);
+            REQUIRE(blocks[1].get<adm::Duration>().get().asNanoseconds().count() == 500000000);
+        }
+    }
+
     GIVEN("the same object with the ebu profile") {
         admio::captured_programme captured;
         admio::captured_object object;
@@ -1187,7 +1231,6 @@ SCENARIO("ear.adm writes a Dolby Atmos master") {
 
     GIVEN("a programme captured with the Dolby profile: two objects, a 7.1.2 bed and a scene") {
         admio::captured_programme captured;
-        captured.name = "Mix";
         captured.profile = admio::adm_profile::dolby;
 
         // a polar object with the profile's back zone, another zone, and

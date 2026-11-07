@@ -140,7 +140,7 @@ public:
         } } };
 
     attribute<symbol> programmename{ this, "programmename", "libear-max",
-        description{ "Name of the audioProgramme written." } };
+        description{ "Name of the audioProgramme written (the Dolby profile always names it Atmos_Master, as its specification asks)." } };
 
     attribute<symbol> profile{ this, "profile", "ebu",
         description{ "Shape of the ADM recorded: 'ebu' (BS.2076 as libadm writes it) or 'dolby' (the Dolby Atmos Master ADM "
