@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.6.0](https://github.com/tsln-lab/libear-max/compare/v1.5.0...v1.6.0) (2026-11-07)
+
+
+### Features
+
+* start and end an mc.ear.record~ take with a gate signal, to the sample ([#43](https://github.com/tsln-lab/libear-max/issues/43)) ([6169ad1](https://github.com/tsln-lab/libear-max/commit/6169ad1c40f8e8b3ef7a9b2eb4c9eea76105e7e6))
+
+
+### Bug Fixes
+
+* write Dolby-profile files that Dolby Atmos importers accept ([#42](https://github.com/tsln-lab/libear-max/issues/42)) ([de08723](https://github.com/tsln-lab/libear-max/commit/de0872391627c6b2a9a2714647511be91651a5c4))
+
 ## [1.5.0](https://github.com/tsln-lab/libear-max/compare/v1.4.0...v1.5.0) (2026-11-06)
 
 
