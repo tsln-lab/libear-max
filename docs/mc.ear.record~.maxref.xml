@@ -3,7 +3,7 @@
 <c74object name='mc.ear.record~' category='spatial audio, ADM, files, mc'>
 
 	<digest>Record an ADM file (BW64 with ADM metadata): the multichannel input carries the tracks in file order, the objects' audio first (one channel per object, as fed to mc.ear.objects~), then a DirectSpeakers bed (directchans) and an HOA scene (hoaorder), combined with mc.combine~</digest>
-	<description>Record an ADM file (BW64 with ADM metadata): the multichannel input carries the tracks in file order, the objects' audio first (one channel per object, as fed to mc.ear.objects~), then a DirectSpeakers bed (directchans) and an HOA scene (hoaorder), combined with mc.combine~. The object metadata is sent to this object in the same format as to mc.ear.objects~ (setvalue N parameter, applyvalues, lists) while it records: every change is written as an audioBlockFormat timed by the audio itself, with the ramp in force as its interpolation, so audio and metadata cannot drift apart. The bed and scene metadata is static, given as 'direct ...' and 'hoa ...' messages in the formats of mc.ear.direct~ and mc.ear.hoa~. 'open path' names the file, 'start' (or 1) records from the current parameters, 'stop' (or 0) finishes the file and reports it on the outlet. 'arm' instead starts and stops the take with the signal in the right inlet, to the sample: it starts where the gate turns non-zero and ends where it returns to zero (in Max for Live, a gate that moves with the transport makes takes follow Live's transport). Extra input channels are ignored, missing ones are silent. Files over 4 GB are written as RF64.</description>
+	<description>Record an ADM file (BW64 with ADM metadata): the multichannel input carries the tracks in file order, the objects' audio first (one channel per object, as fed to mc.ear.objects~), then a DirectSpeakers bed (directchans) and an HOA scene (hoaorder), combined with mc.combine~. The object metadata is sent to this object in the same format as to mc.ear.objects~ (setvalue N parameter, applyvalues, lists) while it records: every change is written as an audioBlockFormat timed by the audio itself, with the ramp in force as its interpolation, so audio and metadata cannot drift apart. The bed and scene metadata is static, given as 'direct ...' and 'hoa ...' messages in the formats of mc.ear.direct~ and mc.ear.hoa~. 'open path' names the file, 'start' (or 1) records from the current parameters, 'stop' (or 0) finishes the file and reports it on the outlet. Extra input channels are ignored, missing ones are silent. Files over 4 GB are written as RF64.</description>
 
 	<!--METADATA-->
 
@@ -30,10 +30,6 @@
 		<method name='applyvalues'>
 			<digest>Object metadata: 'applyvalues parameter v1 v2 v3 ...' spreads values over the objects</digest>
 			<description>Object metadata: 'applyvalues parameter v1 v2 v3 ...' spreads values over the objects.</description>
-		</method>
-		<method name='arm'>
-			<digest>Arm a take started and ended by the gate signal in the right inlet ('arm path' also names the file): the recording starts on the first sample where the gate turns non-zero after a zero (so a gate already open waits for the next opening), and ends on the first sample where it is zero again; the file is then finished by itself</digest>
-			<description>Arm a take started and ended by the gate signal in the right inlet ('arm path' also names the file): the recording starts on the first sample where the gate turns non-zero after a zero (so a gate already open waits for the next opening), and ends on the first sample where it is zero again; the file is then finished by itself. One 'arm' records one take. Reports 'armed path', then 'recording path' when the take starts; 'stop' while armed cancels the take ('cancelled path').</description>
 		</method>
 		<method name='bitdepth'>
 			<arglist>
@@ -114,7 +110,7 @@
 				<arg name='programmename' optional='0' type='symbol' />
 			</arglist>
 			<digest>Set the programmename attribute</digest>
-			<description>Set the <at>programmename</at> attribute. Name of the audioProgramme written.</description>
+			<description>Set the <at>programmename</at> attribute. Name of the audioProgramme written (the Dolby profile always names it Atmos_Master, as its specification asks).</description>
 		</method>
 		<method name='ramp'>
 			<arglist>
@@ -133,7 +129,7 @@
 		</method>
 		<method name='stop'>
 			<digest>Stop recording: the file is finished with the captured metadata and reported as 'written path tracks length-ms' on the outlet (or 'failed path')</digest>
-			<description>Stop recording: the file is finished with the captured metadata and reported as 'written path tracks length-ms' on the outlet (or 'failed path'). While armed, the take is cancelled.</description>
+			<description>Stop recording: the file is finished with the captured metadata and reported as 'written path tracks length-ms' on the outlet (or 'failed path').</description>
 		</method>
 	</methodlist>
 
@@ -165,8 +161,8 @@
 			<description>Shape of the ADM recorded: 'ebu' (BS.2076 as libadm writes it) or 'dolby' (the Dolby Atmos Master ADM Profile: the bed with Dolby's channel formats, labels and Cartesian positions, the objects with Cartesian blocks, the profile's names, ids and timing, and the bed's tracks first, then the objects', as in a Dolby Atmos master; what the profile has no place for, such as an HOA scene, is left out with a warning). The input order stays the objects, then the bed. Takes effect at the next 'start'. Default: ebu.</description>
 		</attribute>
 		<attribute name='programmename' get='1' set='1' type='symbol' size='1'>
-			<digest>Name of the audioProgramme written</digest>
-			<description>Name of the audioProgramme written. Default: libear-max.</description>
+			<digest>Name of the audioProgramme written (the Dolby profile always names it Atmos_Master, as its specification asks)</digest>
+			<description>Name of the audioProgramme written (the Dolby profile always names it Atmos_Master, as its specification asks). Default: libear-max.</description>
 		</attribute>
 		<attribute name='ramp' get='1' set='1' type='float64' size='1'>
 			<digest>Default interpolation time in milliseconds written for the changes, as the renderer's ramp attribute; 'setvalue N ramp ms' overrides it per object (a negative value returns to it)</digest>
