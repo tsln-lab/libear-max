@@ -41,6 +41,7 @@
 #include "ear/conversion.hpp"
 #include "ear/layout.hpp"
 
+#include "ear_max_dbmd.h"
 #include "ear_max_hoa.h"
 
 #include <algorithm>
@@ -80,6 +81,26 @@ inline std::chrono::nanoseconds to_nanoseconds(double seconds_value)
 inline adm::Time to_time(double seconds_value)
 {
     return adm::Time(std::chrono::nanoseconds(static_cast<int64_t>(std::llround(seconds_value * 1e9))));
+}
+
+/// A time of a Dolby Atmos master: rounded down to 10 microseconds, so that
+/// it is written with the five decimals of hh:mm:ss.zzzzz. Dolby's tools
+/// write no other form, and WaveLab's Dolby Atmos import does not read a
+/// file with more (libadm writes up to nine for a time that needs them).
+inline adm::Time dolby_time(double seconds_value)
+{
+    const int64_t ns = static_cast<int64_t>(std::llround(seconds_value * 1e9));
+    const int64_t step = 10000;
+    const int64_t floored = ns >= 0 ? ns / step * step : -((-ns + step - 1) / step * step);
+    return adm::Time(std::chrono::nanoseconds(floored));
+}
+
+/// The difference of two dolby_time()s, so that blocks stay contiguous.
+inline adm::Time dolby_duration(double from, double to)
+{
+    const auto a = dolby_time(from).asNanoseconds();
+    const auto b = dolby_time(to).asNanoseconds();
+    return adm::Time(std::max(std::chrono::nanoseconds(0), b - a));
 }
 
 inline bool same_time(double a, double b)
@@ -1362,7 +1383,6 @@ inline void add_dolby_object_blocks(const std::shared_ptr<adm::AudioChannelForma
         const captured_block& c = object.blocks[k];
         const object_state& s = c.state;
         const double next = k + 1 < object.blocks.size() ? object.blocks[k + 1].time : length;
-        const double duration = std::max(0.0, next - c.time);
 
         ear::ObjectsTypeMetadata otm;
         if (s.cartesian) {
@@ -1385,8 +1405,8 @@ inline void add_dolby_object_blocks(const std::shared_ptr<adm::AudioChannelForma
         adm::AudioBlockFormatObjects block(adm::CartesianPosition(adm::X(static_cast<float>(clamp(cart.X))),
                                                                   adm::Y(static_cast<float>(clamp(cart.Y))),
                                                                   adm::Z(static_cast<float>(clamp(cart.Z)))));
-        block.set(adm::Rtime(to_time(c.time)));
-        block.set(adm::Duration(to_time(duration)));
+        block.set(adm::Rtime(dolby_time(c.time)));
+        block.set(adm::Duration(dolby_duration(c.time, next)));
         block.set(adm::Cartesian(true));
         const double size = std::max(0.0, std::max(otm.width, std::max(otm.height, otm.depth)));
         if (size > 0.0) {
@@ -1566,8 +1586,8 @@ inline std::shared_ptr<adm::Document> build_dolby_document(const captured_progra
 {
     auto doc = adm::Document::create();
     auto programme = adm::AudioProgramme::create(adm::AudioProgrammeName(captured.name));
-    programme->set(adm::Start(to_time(0.0)));
-    programme->set(adm::End(to_time(length)));
+    programme->set(adm::Start(dolby_time(0.0)));
+    programme->set(adm::End(dolby_time(length)));
     auto content = adm::AudioContent::create(adm::AudioContentName("Atmos_Master_Content"));
     content->set(adm::Dialogue::MIXED);
     content->set(adm::MixedContent::UNDEFINED);
@@ -1597,8 +1617,8 @@ inline std::shared_ptr<adm::Document> build_dolby_document(const captured_progra
     const auto make_object = [&](const std::string& name, adm::TypeDescriptor type) {
         dolby_element e;
         e.object = adm::AudioObject::create(adm::AudioObjectName(name));
-        e.object->set(adm::Start(to_time(0.0)));
-        e.object->set(adm::Duration(to_time(length)));
+        e.object->set(adm::Start(dolby_time(0.0)));
+        e.object->set(adm::Duration(dolby_time(length)));
         e.pack = adm::AudioPackFormat::create(adm::AudioPackFormatName(name), type);
         e.object->addReference(e.pack);
         content->addReference(e.object);
@@ -1877,7 +1897,7 @@ inline std::string to_xml(const std::shared_ptr<adm::Document>& doc)
 /// Write `audio_in` (any WAV/BW64 file) to `out` as a BW64 file carrying the
 /// given ADM document and chna entries. Returns the number of frames written.
 /// With the Dolby profile a file of 4 GB or more is marked RF64 instead of
-/// BW64, as the profile asks. `sources` gives the channel of `audio_in`
+/// BW64, as the profile asks, and the dbmd chunk is written (ear_max_dbmd.h). `sources` gives the channel of `audio_in`
 /// copied to each track (see track_sources); empty, or for the tracks it
 /// does not cover, the channels are copied in their order.
 inline uint64_t write_file(const std::string& out, const std::string& audio_in, const std::shared_ptr<adm::Document>& doc,
@@ -1898,6 +1918,9 @@ inline uint64_t write_file(const std::string& out, const std::string& audio_in, 
     auto axml = std::make_shared<bw64::AxmlChunk>(to_xml(doc));
     auto writer = bw64::writeFile(out, reader->channels(), reader->sampleRate(), reader->bitDepth(), chna, axml);
     writer->useRf64Id(profile == adm_profile::dolby);
+    if (profile == adm_profile::dolby) {
+        writer->setAxmlChunk(std::make_shared<dbmd_chunk>(dolby_dbmd()));    // after the data, as Dolby's tools put it
+    }
 
     const size_t channels = reader->channels();
     std::vector<size_t> order(channels);
