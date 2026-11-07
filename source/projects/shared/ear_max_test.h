@@ -62,6 +62,66 @@ inline long attr_args_offset(const long ac, const c74::max::t_atom* av)
     return ac;
 }
 
+/// The ids and bodies of the chunks of a RIFF/BW64 file, in file order
+/// (the data chunk's body is left empty).
+inline std::vector<std::pair<std::string, std::string>> riff_chunks(const std::string& path)
+{
+    std::vector<std::pair<std::string, std::string>> out;
+    std::ifstream file(path, std::ios::binary);
+    char head[12];
+    if (!file.read(head, 12)) {
+        return out;
+    }
+    char header[8];
+    while (file.read(header, 8)) {
+        const std::string id(header, 4);
+        uint32_t size = 0;
+        std::memcpy(&size, header + 4, 4);
+        std::string body;
+        if (id == "data") {
+            file.seekg(size, std::ios::cur);
+        }
+        else {
+            body.resize(size);
+            file.read(&body[0], size);
+        }
+        if (size & 1u) {
+            file.seekg(1, std::ios::cur);
+        }
+        out.emplace_back(id, body);
+    }
+    return out;
+}
+
+/// The ids of the chunks of a RIFF/BW64 file, in file order, joined by spaces.
+inline std::string riff_chunk_ids(const std::string& path)
+{
+    std::string ids;
+    for (const auto& c : riff_chunks(path)) {
+        ids += (ids.empty() ? "" : " ") + c.first;
+    }
+    return ids;
+}
+
+/// True when every time attribute (start, end, duration, rtime) of an ADM
+/// document has the five decimals of hh:mm:ss.zzzzz.
+inline bool times_have_five_decimals(const std::string& xml)
+{
+    const char* names[] = { "start=\"", "end=\"", "duration=\"", "rtime=\"" };
+    for (const char* name : names) {
+        size_t at = 0;
+        while ((at = xml.find(name, at)) != std::string::npos) {
+            at += std::strlen(name);
+            const size_t close = xml.find('"', at);
+            const size_t dot = xml.find('.', at);
+            if (dot == std::string::npos || dot > close || close - dot - 1 != 5) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 /// The values of the most recent list sent from an outlet (selector symbols are skipped).
 inline std::vector<double> last_list(void* obj, int outlet_index)
 {
